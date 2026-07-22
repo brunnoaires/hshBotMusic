@@ -108,6 +108,82 @@ async function streamFor(youtubeId) {
   return source;
 }
 
+const buscaKey = (texto) => `busca:${texto.toLowerCase().replace(/\s+/g, ' ').trim()}`;
+
+function melhorMiniatura(entrada) {
+  const lista = entrada?.thumbnails ?? [];
+  // Ordena por area e pega a maior com URL utilizavel.
+  const maior = [...lista]
+    .filter((t) => t?.url)
+    .sort((a, b) => (b.width ?? 0) * (b.height ?? 0) - (a.width ?? 0) * (a.height ?? 0))[0];
+  return maior?.url ?? entrada?.thumbnail ?? null;
+}
+
+/**
+ * Pedido manual do /sr: texto de busca ou link direto vira uma faixa tocavel.
+ *
+ * Diferente do fluxo do Spotify, aqui nao ha duracao de referencia para
+ * ranquear — a pessoa digitou o que queria, entao a relevancia do proprio
+ * YouTube e o melhor criterio. Uma chamada so, sem a passada de ranking.
+ *
+ * @returns {Promise<object|null>} faixa no formato que o player espera.
+ */
+export async function buscarPedido(texto) {
+  await resolveCache.ready();
+
+  const ehLink = /^https?:\/\//i.test(texto);
+
+  // Guarda a faixa inteira, nao so o id: guardando o id ainda seria preciso
+  // outra chamada ao yt-dlp para os metadados, e a repeticao nao ganharia nada.
+  if (!ehLink) {
+    const cacheada = resolveCache.get(buscaKey(texto));
+    if (cacheada) {
+      log.debug(`pedido "${texto}" veio do cache`);
+      return { ...cacheada };
+    }
+  }
+
+  let info;
+  try {
+    info = await runJson([
+      ehLink ? texto : `ytsearch1:${texto}`,
+      '--dump-single-json',
+      '--flat-playlist',
+      // Link de playlist traz so o video apontado, senao um pedido viraria
+      // centenas de faixas na fila.
+      '--no-playlist',
+      '--no-warnings',
+    ]);
+  } catch (err) {
+    log.warn(`pedido "${texto}" falhou: ${err.message}`);
+    return null;
+  }
+
+  // Busca devolve playlist com entries; link devolve o video direto.
+  const entrada = info?.entries?.[0] ?? info;
+  if (!entrada?.id) {
+    log.warn(`nenhum resultado para o pedido "${texto}"`);
+    return null;
+  }
+
+  const faixa = {
+    id: `yt:${entrada.id}`,
+    youtubeId: entrada.id,
+    title: entrada.title ?? texto,
+    artists: entrada.uploader ?? entrada.channel ?? 'YouTube',
+    album: null,
+    url: entrada.webpage_url ?? `https://www.youtube.com/watch?v=${entrada.id}`,
+    artwork: melhorMiniatura(entrada),
+    durationMs: entrada.duration ? Math.round(entrada.duration * 1000) : null,
+    progressMs: 0,
+    isPlaying: true,
+    source: 'pedido',
+  };
+
+  if (!ehLink) resolveCache.set(buscaKey(texto), faixa);
+  return faixa;
+}
+
 /** Descarta a URL assinada de um video (usado quando o ffmpeg leva 403). */
 export function invalidateStream(youtubeId) {
   resolveCache.delete(streamKey(youtubeId));
@@ -134,6 +210,15 @@ export function invalidateMatch(spotifyId) {
  */
 export async function resolveAudio(track) {
   await resolveCache.ready();
+
+  // Pedido manual (/sr) ja chega com o video escolhido: nao ha o que procurar,
+  // so extrair o audio. Pula a busca inteira, que e a metade cara.
+  if (track.youtubeId) {
+    return streamFor(track.youtubeId).catch((err) => {
+      log.warn(`extracao falhou para ${track.youtubeId}: ${err.message}`);
+      return null;
+    });
+  }
 
   const query = `${track.artists} - ${track.title}`;
   const cachedId = track.id ? resolveCache.get(matchKey(track.id)) : null;

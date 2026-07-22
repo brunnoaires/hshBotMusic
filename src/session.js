@@ -25,7 +25,8 @@ const SEM_API = {
 class GuildSession {
   constructor({ guildId, driverId, api, config, criarPlayer, announceChannelId }) {
     this.guildId = guildId;
-    this.driverId = driverId;
+    /** Quem esta sendo seguido no Spotify. Null = modo jukebox, so /sr. */
+    this.driverId = driverId ?? null;
     this.usaApi = api.enabled;
 
     /** Canal onde /vincular foi usado; e la que os cartoes sao publicados. */
@@ -42,8 +43,32 @@ class GuildSession {
     this.watcher.on('stopped', () => this.player.skip());
   }
 
+  /** Sem driver, a fila do /sr e a unica fonte. */
+  get manual() {
+    return this.driverId === null;
+  }
+
   get current() {
     return this.watcher.current ?? this.player.current ?? null;
+  }
+
+  /**
+   * Enfileira um pedido manual e comeca a tocar se estiver parado.
+   *
+   * Nao passa pelo player.onSpotifyTrack de proposito: aquele caminho respeita
+   * o modo follow, que interromperia a faixa atual. Pedido nunca corta o que ja
+   * esta tocando — quem pediu antes ouve inteiro.
+   */
+  pedir(track) {
+    // Checar tambem `carregando`: dois /sr seguidos veriam `current` ainda nulo
+    // durante a resolucao do primeiro, e o segundo cortaria o primeiro.
+    if (this.player.current || this.player.carregando) {
+      this.player.queue.push(track);
+      return { posicao: this.player.queue.length, tocandoAgora: false };
+    }
+
+    void this.player.play(track, { fromStart: true });
+    return { posicao: 0, tocandoAgora: true };
   }
 
   stop() {

@@ -40,6 +40,12 @@ export class SyncPlayer {
 
   queue = [];
   current = null;
+  /**
+   * Uma faixa esta sendo resolvida agora. `current` so aparece depois da
+   * resolucao, entao quem checa "esta tocando?" antes disso ve um player livre
+   * que ja tem trabalho a caminho.
+   */
+  carregando = false;
   mode;
   syncPosition;
   /** Chamado quando o audio realmente comeca, com a faixa ja resolvida. */
@@ -124,6 +130,10 @@ export class SyncPlayer {
 
   leave() {
     this.#killFfmpeg();
+    // Invalida resolucao em andamento: sem isso, sair durante a busca deixaria
+    // ela terminar depois e subir um ffmpeg orfao numa conexao ja destruida.
+    this.#generation++;
+    this.carregando = false;
     this.queue = [];
     this.current = null;
     this.#audioPlayer.stop(true);
@@ -155,20 +165,25 @@ export class SyncPlayer {
   async play(track, { fromStart = false, allowRetry = true } = {}) {
     const generation = ++this.#generation;
     const startedAt = Date.now();
+    this.carregando = true;
 
     let source;
     try {
       source = await resolveAudio(track);
     } catch (err) {
       log.error(`falha ao resolver "${track.title}":`, err.message);
+      if (generation === this.#generation) this.carregando = false;
       return;
     }
 
     // Voce ja trocou de musica de novo enquanto isso resolvia — descarta.
+    // A flag fica com a resolucao mais nova, que ainda esta em andamento.
     if (generation !== this.#generation) {
       log.debug(`descartando "${track.title}": faixa obsoleta`);
       return;
     }
+
+    this.carregando = false;
     if (!source) return;
 
     // Soma o tempo gasto resolvendo, senao a faixa entra atrasada por esse tanto.

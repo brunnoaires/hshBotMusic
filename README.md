@@ -8,6 +8,9 @@ você está.
 conectou a conta, e é de lá que o bot lê. Qualquer pessoa do servidor entra numa
 call, usa `/vincular`, e pronto.
 
+Também funciona **sem Spotify nenhum**: `/sr <música>` pede faixa por nome ou
+link, e a fila vira coletiva. Veja [modo jukebox](#sem-spotify-modo-jukebox).
+
 ```
 Spotify ──presence do Discord──┐                  ┌── cache ──┐
                                ├─► watcher ──► resolve ──► ffmpeg ──► canal de voz
@@ -134,6 +137,7 @@ O comando `/ajuda` explica isso dentro do próprio Discord.
 
 | Comando | O que faz | Quem pode |
 | --- | --- | --- |
+| `/sr <música>` | Pede uma música sem Spotify: busca por nome ou cola um link | qualquer um |
 | `/vincular [canal]` | Entra no canal de voz (padrão: o seu) e passa a seguir o **seu** Spotify | qualquer um |
 | `/agora` | Mostra o que está tocando, com progresso e o vídeo escolhido | qualquer um |
 | `/fila` | Lista o que está enfileirado | qualquer um |
@@ -144,6 +148,30 @@ O comando `/ajuda` explica isso dentro do próprio Discord.
 | `/rematch` | Achou o vídeo errado? Esquece o match em cache e procura de novo | driver 🔒 |
 
 🔒 = o **driver** (quem rodou `/vincular`) ou quem tem Gerenciar Servidor.
+
+### Sem Spotify: modo jukebox
+
+Não precisa vincular nada para usar o bot. O `/sr` pede música direto:
+
+```
+/sr racionais mcs negro drama
+/sr https://www.youtube.com/watch?v=...
+```
+
+Se o bot não estiver em nenhum canal, o `/sr` já o traz para o seu e começa a
+tocar. A partir daí a fila é coletiva: **qualquer pessoa pede, e os controles
+ficam abertos a todos** — não há driver a proteger, porque não há Spotify de
+ninguém sendo seguido.
+
+O pedido **nunca corta** o que está tocando. Quem pediu antes ouve inteiro; o
+resto entra na fila, e `/fila` mostra quem pediu cada faixa.
+
+Link de playlist traz só o vídeo apontado, não a playlist inteira — senão um
+pedido viraria centenas de faixas de uma vez.
+
+**Misturando com o Spotify:** dá para usar `/sr` numa sessão vinculada, mas em
+modo `follow` a próxima troca no Spotify interrompe o pedido. O bot avisa disso
+na resposta e sugere `/modo queue`, onde as duas fontes convivem na mesma fila.
 
 ### Uma sessão por servidor
 

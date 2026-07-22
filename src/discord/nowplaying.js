@@ -21,13 +21,26 @@ export function montarCartao({ track, session, voiceChannelName }) {
   });
 
   const titulo = `${track.artists} — ${track.title}`;
+
+  // Pedido pelo /sr mostra quem pediu; faixa vinda do Spotify mostra quem esta
+  // sendo seguido. Em modo jukebox nao ha driver a citar.
+  const origem = track.requestedBy
+    ? `- Pedido por <@${track.requestedBy}>`
+    : session.driverId
+      ? `- Seguindo <@${session.driverId}>`
+      : null;
+
+  const rodape = session.manual
+    ? `Fila: \`${session.player.queue.length}\` · Modo: \`jukebox\``
+    : `Fila: \`${session.player.queue.length}\` · Modo: \`${session.player.mode}\` · ` +
+      `Fonte: \`${session.usaApi ? 'presence + API' : 'presence'}\``;
+
   const linhas = [
     track.url ? `**[${titulo}](${track.url})**` : `**${titulo}**`,
-    `- Seguindo <@${session.driverId}>`,
+    origem,
     voiceChannelName ? `- 🔊 ${voiceChannelName}` : null,
     '',
-    `Fila: \`${session.player.queue.length}\` · Modo: \`${session.player.mode}\` · ` +
-      `Fonte: \`${session.usaApi ? 'presence + API' : 'presence'}\``,
+    rodape,
   ].filter((linha) => linha !== null);
 
   const embed = new EmbedBuilder()

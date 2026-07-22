@@ -269,6 +269,7 @@ tabela(
     ['/pular', 'Pula a faixa atual. Em modo queue, avança para a próxima da fila.'],
     ['/fila', 'Lista as faixas enfileiradas (até 15, com contagem do restante).'],
     ['/rematch', 'Achou o vídeo errado? Descarta o match guardado em cache e procura de novo.'],
+    ['/sr <música>', 'Pede uma música sem depender do Spotify: busca por nome ou aceita um link. Se o bot não estiver em canal nenhum, já entra no seu e começa a tocar.'],
     ['/ajuda', 'Lista todos os comandos com suas descrições e explica, dentro do Discord, como ligar o Spotify à conta. A lista é montada a partir das próprias definições dos comandos, então nunca fica defasada.'],
   ],
   { pesos: [1, 2.4], codigo: true },
@@ -278,7 +279,7 @@ titulo2('Quem pode usar o quê');
 tabela(
   [
     ['Comando', 'Quem pode'],
-    ['/vincular, /agora, /fila, /pular, /ajuda', 'Qualquer pessoa do servidor'],
+    ['/sr, /vincular, /agora, /fila, /pular, /ajuda', 'Qualquer pessoa do servidor'],
     ['/desvincular, /modo, /rematch', 'O driver, ou quem tem Gerenciar Servidor'],
   ],
   { pesos: [1.5, 1.4] },
@@ -289,6 +290,15 @@ paragrafo(
     'derrubaria a sessão alheia no meio da música. Quando o canal de voz esvazia, a sessão ' +
     'encerra sozinha.',
 );
+
+titulo2('Modo jukebox: sem Spotify');
+bullets([
+  'Não é preciso vincular nada. O /sr pede música por nome ou por link, e se o bot não estiver em canal nenhum, ele já entra no seu e começa a tocar.',
+  'Sem ninguém sendo seguido, não há driver a proteger: a fila é coletiva e os controles ficam abertos a todo mundo.',
+  'Um pedido nunca corta o que está tocando — quem pediu antes ouve inteiro. O /fila mostra quem pediu cada faixa.',
+  'Link de playlist traz só o vídeo apontado, senão um único pedido viraria centenas de faixas.',
+  'Dá para usar /sr numa sessão já vinculada ao Spotify, mas em modo follow a próxima troca interrompe o pedido. O bot avisa disso na resposta e sugere /modo queue, onde as duas fontes convivem na mesma fila.',
+]);
 
 titulo1('2. Detecção do que está tocando');
 

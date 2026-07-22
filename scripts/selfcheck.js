@@ -19,7 +19,9 @@ check('binarios instalados', async () => {
 check('commands.js constroi os slash commands', async () => {
   const { commands } = await import('../src/discord/commands.js');
   const names = commands.map((c) => c.name);
-  const esperados = ['vincular', 'desvincular', 'modo', 'agora', 'pular', 'fila', 'rematch', 'ajuda'];
+  const esperados = [
+    'vincular', 'desvincular', 'modo', 'agora', 'pular', 'fila', 'rematch', 'sr', 'ajuda',
+  ];
   for (const n of esperados) {
     if (!names.includes(n)) throw new Error(`faltou /${n}`);
   }
@@ -219,6 +221,60 @@ check('sessoes respeitam o teto de servidores simultaneos', async () => {
 
   sessions.stopAll();
   return 'recusa acima do teto, permite reiniciar existente';
+});
+
+check('jukebox: primeiro pedido toca, os seguintes enfileiram', async () => {
+  const { SessionManager } = await import('../src/session.js');
+
+  const criarPlayer = () => ({
+    queue: [], current: null, carregando: false, mode: 'follow',
+    tocadas: [],
+    join: async () => {}, leave() {}, skip: () => null,
+    pause() {}, resume() {}, onSpotifyTrack() {},
+    async play(track) {
+      // Imita o player real: `current` so aparece depois de resolver.
+      this.carregando = true;
+      await new Promise((r) => setTimeout(r, 10));
+      this.carregando = false;
+      this.current = track;
+      this.tocadas.push(track.id);
+    },
+  });
+
+  const sessions = new SessionManager({
+    config: {
+      discord: { ownerId: 'dono' }, defaultMode: 'follow', syncPosition: true,
+      pollIntervalMs: 60_000, maxSessions: 10, announceTracks: false,
+    },
+    ownerApi: { enabled: true, currentlyPlaying: async () => null, queue: async () => [] },
+    criarPlayer,
+  });
+
+  const s = await sessions.start({ channel: { guild: { id: 'g1' } }, driverId: null });
+  if (!s.manual) throw new Error('sessao sem driver deveria ser jukebox');
+  if (s.usaApi) throw new Error('jukebox nao pode consumir a Web API do dono');
+
+  const faixa = (id) => ({ id, youtubeId: id, title: id, artists: 'x' });
+
+  const um = s.pedir(faixa('a'));
+  if (!um.tocandoAgora) throw new Error('o primeiro pedido deveria tocar na hora');
+  if (s.player.queue.length !== 0) {
+    throw new Error('o que toca agora nao pode ficar tambem na fila, senao repete');
+  }
+
+  // Ainda resolvendo: o segundo pedido nao pode cortar o primeiro.
+  const dois = s.pedir(faixa('b'));
+  if (dois.tocandoAgora) throw new Error('o segundo pedido cortou o primeiro durante a resolucao');
+  if (dois.posicao !== 1) throw new Error(`posicao errada: ${dois.posicao}`);
+
+  await new Promise((r) => setTimeout(r, 30));
+  const tres = s.pedir(faixa('c'));
+  if (tres.tocandoAgora) throw new Error('deveria enfileirar, ja tem faixa tocando');
+  if (s.player.tocadas.join(',') !== 'a') throw new Error(`tocou ${s.player.tocadas}`);
+  if (s.player.queue.length !== 2) throw new Error(`fila com ${s.player.queue.length}`);
+
+  sessions.stopAll();
+  return 'toca a primeira, enfileira b e c, sem duplicar';
 });
 
 check('sessoes isolam servidores e roteiam por driver', async () => {

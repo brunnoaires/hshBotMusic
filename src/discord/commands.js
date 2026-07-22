@@ -5,7 +5,7 @@ import {
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
-import { invalidateMatch } from '../audio/resolve.js';
+import { buscarPedido, invalidateMatch } from '../audio/resolve.js';
 import { readSpotifyActivity } from '../spotify/presence.js';
 import { createLogger } from '../logger.js';
 
@@ -48,6 +48,17 @@ export const commands = [
     .setName('rematch')
     .setDescription('Achou o vídeo errado? Esquece o match em cache e procura de novo'),
   new SlashCommandBuilder()
+    .setName('sr')
+    .setDescription('Pede uma música sem Spotify: busca por nome ou cola um link')
+    .addStringOption((option) =>
+      option
+        .setName('musica')
+        .setDescription('Nome da música, ou um link do YouTube')
+        .setRequired(true)
+        .setMinLength(2)
+        .setMaxLength(200),
+    ),
+  new SlashCommandBuilder()
     .setName('ajuda')
     .setDescription('Lista os comandos e explica como ligar o seu Spotify'),
 ].map((command) => command.toJSON());
@@ -78,11 +89,49 @@ function presenceDe(guild, userId) {
   return guild.members.cache.get(userId)?.presence ?? guild.presences.cache.get(userId) ?? null;
 }
 
-/** Quem gerencia o servidor pode mexer na sessao de outra pessoa. */
+/**
+ * Quem gerencia o servidor pode mexer na sessao de outra pessoa.
+ *
+ * Sessao em modo jukebox (sem driver) nao tem dono: a fila e coletiva, entao
+ * os controles ficam abertos a todo mundo.
+ */
 function podeControlar(interaction, session) {
-  if (!session) return true;
+  if (!session || session.manual) return true;
   if (interaction.user.id === session.driverId) return true;
   return interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) ?? false;
+}
+
+/** Canal de voz para entrar: o informado, ou o de quem chamou. */
+function canalDeVoz(interaction) {
+  return interaction.options.getChannel('canal') ?? interaction.member?.voice?.channel ?? null;
+}
+
+function faltaPermissaoDeVoz(channel, interaction) {
+  const permissoes = channel.permissionsFor(interaction.guild.members.me);
+  return !permissoes?.has([PermissionFlagsBits.Connect, PermissionFlagsBits.Speak]);
+}
+
+function podeAnunciarEm(interaction) {
+  return (
+    interaction.channel
+      ?.permissionsFor(interaction.guild.members.me)
+      ?.has([
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.EmbedLinks,
+        PermissionFlagsBits.AttachFiles,
+      ]) ?? false
+  );
+}
+
+function duracaoLegivel(ms) {
+  if (!ms) return null;
+  const total = Math.round(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return h
+    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    : `${m}:${String(s).padStart(2, '0')}`;
 }
 
 /**
@@ -159,9 +208,10 @@ function nowPlayingEmbed(session) {
   });
 
   embed.setFooter({
-    text:
-      `de <@${session.driverId}> · modo: ${session.player.mode} · ` +
-      `fonte: ${session.usaApi ? 'presence + API' : 'presence'}`,
+    text: session.manual
+      ? `jukebox · ${session.player.queue.length} na fila`
+      : `de <@${session.driverId}> · modo: ${session.player.mode} · ` +
+        `fonte: ${session.usaApi ? 'presence + API' : 'presence'}`,
   });
 
   return embed;
@@ -181,6 +231,66 @@ export async function handleCommand(interaction, { sessions, config, onChange })
       return;
     }
 
+    case 'sr': {
+      const pedido = interaction.options.getString('musica').trim();
+
+      // Sem sessao, o /sr cria uma em modo jukebox: sem Spotify, sem driver,
+      // a fila e a unica fonte. Assim ninguem precisa vincular nada primeiro.
+      let alvo = session;
+      if (!alvo) {
+        const channel = canalDeVoz(interaction);
+        if (!channel) {
+          await interaction.reply(efemero('Entre num canal de voz antes de pedir música.'));
+          return;
+        }
+        if (faltaPermissaoDeVoz(channel, interaction)) {
+          await interaction.reply(
+            efemero(`Não tenho permissão de conectar e falar em **${channel.name}**.`),
+          );
+          return;
+        }
+
+        await interaction.deferReply();
+        try {
+          alvo = await sessions.start({
+            channel,
+            driverId: null,
+            announceChannelId: podeAnunciarEm(interaction) ? interaction.channelId : null,
+          });
+        } catch (err) {
+          await interaction.editReply(`Não consegui entrar em **${channel.name}**: ${err.message}`);
+          return;
+        }
+        onChange?.();
+      } else {
+        await interaction.deferReply();
+      }
+
+      const track = await buscarPedido(pedido);
+      if (!track) {
+        await interaction.editReply(`Não achei nada para **${pedido}**.`);
+        return;
+      }
+
+      track.requestedBy = interaction.user.id;
+      const { posicao, tocandoAgora } = alvo.pedir(track);
+
+      const duracao = duracaoLegivel(track.durationMs);
+      const rotulo = `**[${track.title}](${track.url})**${duracao ? ` \`${duracao}\`` : ''}`;
+
+      // Em modo follow, a proxima troca no Spotify cortaria o pedido. Avisar
+      // aqui evita a pessoa achar que o bot ignorou o comando.
+      const aviso =
+        !alvo.manual && alvo.player.mode === 'follow'
+          ? '\n-# A próxima troca no Spotify vai interromper. Use `/modo queue` para evitar.'
+          : '';
+
+      await interaction.editReply(
+        tocandoAgora ? `Tocando agora: ${rotulo}${aviso}` : `Na fila (#${posicao}): ${rotulo}${aviso}`,
+      );
+      return;
+    }
+
     case 'vincular': {
       // Tomar o lugar de quem ja esta comandando exige gerenciar o servidor,
       // senao qualquer um derrubaria a sessao alheia no meio da musica.
@@ -194,17 +304,13 @@ export async function handleCommand(interaction, { sessions, config, onChange })
         return;
       }
 
-      const channel =
-        interaction.options.getChannel('canal') ?? interaction.member?.voice?.channel;
-
+      const channel = canalDeVoz(interaction);
       if (!channel) {
         await interaction.reply(efemero('Entre em um canal de voz ou informe um em `canal`.'));
         return;
       }
 
-      const eu = interaction.guild.members.me;
-      const permissoes = channel.permissionsFor(eu);
-      if (!permissoes?.has([PermissionFlagsBits.Connect, PermissionFlagsBits.Speak])) {
+      if (faltaPermissaoDeVoz(channel, interaction)) {
         await interaction.reply(
           efemero(`Não tenho permissão de conectar e falar em **${channel.name}**.`),
         );
@@ -213,13 +319,7 @@ export async function handleCommand(interaction, { sessions, config, onChange })
 
       // Sem isso o cartao de "reproduzindo agora" falharia calado, e a pessoa
       // acharia que o bot simplesmente nao anuncia.
-      const podeAnunciar = interaction.channel
-        ?.permissionsFor(eu)
-        ?.has([
-          PermissionFlagsBits.SendMessages,
-          PermissionFlagsBits.EmbedLinks,
-          PermissionFlagsBits.AttachFiles,
-        ]);
+      const podeAnunciar = podeAnunciarEm(interaction);
 
       await interaction.deferReply();
 
@@ -342,7 +442,11 @@ export async function handleCommand(interaction, { sessions, config, onChange })
 
       const lines = session.player.queue
         .slice(0, 15)
-        .map((track, index) => `\`${index + 1}.\` **${track.title}** — ${track.artists}`);
+        .map(
+          (track, index) =>
+            `\`${index + 1}.\` **${track.title}** — ${track.artists}` +
+            (track.requestedBy ? ` · <@${track.requestedBy}>` : ''),
+        );
       const rest = session.player.queue.length - lines.length;
 
       await interaction.reply(lines.join('\n') + (rest > 0 ? `\n…e mais ${rest}.` : ''));
