@@ -1,0 +1,387 @@
+import {
+  ChannelType,
+  EmbedBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+  SlashCommandBuilder,
+} from 'discord.js';
+import { invalidateMatch } from '../audio/resolve.js';
+import { readSpotifyActivity } from '../spotify/presence.js';
+import { createLogger } from '../logger.js';
+
+const log = createLogger('commands');
+
+// Nomes de comando so aceitam minusculas sem acento, mas as descricoes aceitam
+// texto normal — e sao elas que a pessoa le na interface do Discord.
+export const commands = [
+  new SlashCommandBuilder()
+    .setName('vincular')
+    .setDescription('Entra no canal de voz e passa a seguir o SEU Spotify')
+    .addChannelOption((option) =>
+      option
+        .setName('canal')
+        .setDescription('Canal de voz (padrão: o canal em que você está)')
+        .addChannelTypes(ChannelType.GuildVoice),
+    ),
+  new SlashCommandBuilder()
+    .setName('desvincular')
+    .setDescription('Para de seguir o Spotify e sai do canal de voz'),
+  new SlashCommandBuilder()
+    .setName('modo')
+    .setDescription('Define o que fazer quando você troca de música no Spotify')
+    .addStringOption((option) =>
+      option
+        .setName('opcao')
+        .setDescription('follow interrompe na hora; queue espera a atual acabar')
+        .setRequired(true)
+        .addChoices(
+          { name: 'follow — troca na hora', value: 'follow' },
+          { name: 'queue — enfileira', value: 'queue' },
+        ),
+    ),
+  new SlashCommandBuilder()
+    .setName('agora')
+    .setDescription('Mostra o que está tocando, com progresso e o vídeo escolhido'),
+  new SlashCommandBuilder().setName('pular').setDescription('Pula a faixa atual'),
+  new SlashCommandBuilder().setName('fila').setDescription('Lista as faixas enfileiradas'),
+  new SlashCommandBuilder()
+    .setName('rematch')
+    .setDescription('Achou o vídeo errado? Esquece o match em cache e procura de novo'),
+  new SlashCommandBuilder()
+    .setName('ajuda')
+    .setDescription('Lista os comandos e explica como ligar o seu Spotify'),
+].map((command) => command.toJSON());
+
+/** Comandos que mexem na sessao alheia; ver podeControlar(). */
+const RESTRITOS = new Set(['desvincular', 'modo', 'rematch']);
+
+const efemero = (content) => ({ content, flags: MessageFlags.Ephemeral });
+
+const COMO_LIGAR =
+  'No Discord: **Configurações do Usuário -> Conexões -> Spotify**, conecte a conta e deixe ' +
+  '**"Exibir o Spotify como seu status"** ligado. Depois entre num canal de voz e use `/vincular`. ' +
+  'Você também não pode estar como **Invisível**, senão ninguém (nem o bot) enxerga o seu status.';
+
+function progressBar(progressMs, durationMs, width = 18) {
+  if (!durationMs) return '';
+  const filled = Math.min(width, Math.round((progressMs / durationMs) * width));
+  return '▬'.repeat(filled) + '🔘' + '▬'.repeat(Math.max(0, width - filled));
+}
+
+function formatTime(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+/** Presence do membro, tolerando cache frio. */
+function presenceDe(guild, userId) {
+  return guild.members.cache.get(userId)?.presence ?? guild.presences.cache.get(userId) ?? null;
+}
+
+/** Quem gerencia o servidor pode mexer na sessao de outra pessoa. */
+function podeControlar(interaction, session) {
+  if (!session) return true;
+  if (interaction.user.id === session.driverId) return true;
+  return interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) ?? false;
+}
+
+/**
+ * Lista de comandos montada a partir das proprias definicoes acima. Escrever a
+ * lista a mao daria divergencia na primeira vez que um comando mudasse.
+ */
+export function ajudaEmbed() {
+  const lista = commands
+    .map((c) => `\`/${c.name}\`${RESTRITOS.has(c.name) ? ' 🔒' : ''} — ${c.description}`)
+    .join('\n');
+
+  return new EmbedBuilder()
+    .setColor(0x1db954)
+    .setTitle('Comandos do botdc')
+    .setDescription(
+      'Você troca a música no Spotify e o bot troca na call, começando no mesmo ponto.\n\n' +
+        lista,
+    )
+    .addFields(
+      {
+        name: '🔒 Quem pode usar',
+        value:
+          'Os marcados com cadeado são de quem rodou `/vincular` ou de quem tem ' +
+          '**Gerenciar Servidor**. O resto é livre para todo mundo.',
+      },
+      {
+        name: 'Primeira vez aqui?',
+        value: COMO_LIGAR,
+      },
+      {
+        name: 'Preciso fazer login no Spotify?',
+        value:
+          'Não. O bot lê o que o próprio Discord já publica no seu status. ' +
+          'Nenhuma senha, nenhum token, nenhuma autorização. Ele também não controla ' +
+          'o seu Spotify — só observa e reproduz o mesmo na call.',
+      },
+    );
+}
+
+function nowPlayingEmbed(session) {
+  const spotify = session.watcher.current;
+  const playing = session.player.current;
+
+  if (!spotify && !playing) {
+    return new EmbedBuilder().setColor(0x2b2d31).setDescription('Nada tocando no momento.');
+  }
+
+  const track = spotify ?? playing;
+  const embed = new EmbedBuilder()
+    .setColor(0x1db954)
+    .setAuthor({ name: 'Tocando agora no Spotify' })
+    .setTitle(track.title)
+    .setDescription(track.artists);
+
+  if (track.url) embed.setURL(track.url);
+  if (track.artwork) embed.setThumbnail(track.artwork);
+  if (track.album) embed.addFields({ name: 'Album', value: track.album, inline: true });
+
+  if (track.durationMs) {
+    embed.addFields({
+      name: 'Progresso',
+      value:
+        `${progressBar(track.progressMs ?? 0, track.durationMs)}\n` +
+        `\`${formatTime(track.progressMs ?? 0)} / ${formatTime(track.durationMs)}\``,
+    });
+  }
+
+  embed.addFields({
+    name: 'No Discord',
+    value: playing
+      ? `\`${playing.youtubeTitle}\`` +
+        (playing.seekMs > 1000 ? `\niniciou em ${formatTime(playing.seekMs)}` : '')
+      : 'sem audio tocando',
+  });
+
+  embed.setFooter({
+    text:
+      `de <@${session.driverId}> · modo: ${session.player.mode} · ` +
+      `fonte: ${session.usaApi ? 'presence + API' : 'presence'}`,
+  });
+
+  return embed;
+}
+
+export async function handleCommand(interaction, { sessions, config, onChange }) {
+  if (!interaction.inGuild()) {
+    await interaction.reply(efemero('Esses comandos só funcionam dentro de um servidor.'));
+    return;
+  }
+
+  const session = sessions.get(interaction.guildId);
+
+  switch (interaction.commandName) {
+    case 'ajuda': {
+      await interaction.reply({ embeds: [ajudaEmbed()], flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    case 'vincular': {
+      // Tomar o lugar de quem ja esta comandando exige gerenciar o servidor,
+      // senao qualquer um derrubaria a sessao alheia no meio da musica.
+      if (!podeControlar(interaction, session)) {
+        await interaction.reply(
+          efemero(
+            `<@${session.driverId}> já está com o bot aqui. Peça para essa pessoa usar ` +
+              '`/desvincular`, ou peça a alguém que gerencia o servidor.',
+          ),
+        );
+        return;
+      }
+
+      const channel =
+        interaction.options.getChannel('canal') ?? interaction.member?.voice?.channel;
+
+      if (!channel) {
+        await interaction.reply(efemero('Entre em um canal de voz ou informe um em `canal`.'));
+        return;
+      }
+
+      const eu = interaction.guild.members.me;
+      const permissoes = channel.permissionsFor(eu);
+      if (!permissoes?.has([PermissionFlagsBits.Connect, PermissionFlagsBits.Speak])) {
+        await interaction.reply(
+          efemero(`Não tenho permissão de conectar e falar em **${channel.name}**.`),
+        );
+        return;
+      }
+
+      // Sem isso o cartao de "reproduzindo agora" falharia calado, e a pessoa
+      // acharia que o bot simplesmente nao anuncia.
+      const podeAnunciar = interaction.channel
+        ?.permissionsFor(eu)
+        ?.has([
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.EmbedLinks,
+          PermissionFlagsBits.AttachFiles,
+        ]);
+
+      await interaction.deferReply();
+
+      let novaSessao;
+      try {
+        novaSessao = await sessions.start({
+          channel,
+          driverId: interaction.user.id,
+          // Os cartoes de "reproduzindo agora" saem aqui, no canal de texto em
+          // que o comando foi usado.
+          announceChannelId: podeAnunciar ? interaction.channelId : null,
+        });
+      } catch (err) {
+        log.error('falha ao entrar no canal:', err.message);
+        await interaction.editReply(`Não consegui entrar em **${channel.name}**: ${err.message}`);
+        return;
+      }
+
+      // Diagnostico na hora: dizer so "vinculado" e deixar a pessoa no silencio
+      // e o pior resultado possivel aqui.
+      const presence = presenceDe(interaction.guild, interaction.user.id);
+      const track = readSpotifyActivity(presence);
+
+      const aviso = podeAnunciar
+        ? ''
+        : '\n\n⚠️ Não posso publicar o cartão de "reproduzindo agora" neste canal — ' +
+          'me faltam Enviar Mensagens, Inserir Links ou Anexar Arquivos. A música toca normalmente.';
+
+      if (track) {
+        novaSessao.watcher.onPresence(track);
+        await interaction.editReply(
+          `Seguindo o Spotify de <@${interaction.user.id}> em **${channel.name}**.\n` +
+            `Tocando agora: **${track.title}** — ${track.artists}` +
+            aviso,
+        );
+      } else if (!presence) {
+        await interaction.editReply(
+          `Entrei em **${channel.name}**, mas não consigo ver o seu status. ` +
+            'Você está como Invisível? Fique online e toque algo no Spotify.' +
+            aviso,
+        );
+      } else {
+        await interaction.editReply(
+          `Entrei em **${channel.name}** e vou seguir o seu Spotify assim que ele aparecer.\n` +
+            'Não vejo Spotify no seu status agora. Se já estiver tocando, use `/ajuda`.' +
+            aviso,
+        );
+      }
+
+      onChange?.();
+      return;
+    }
+
+    case 'desvincular': {
+      if (!session) {
+        await interaction.reply(efemero('Não estou vinculado a nada neste servidor.'));
+        return;
+      }
+      if (!podeControlar(interaction, session)) {
+        await interaction.reply(
+          efemero(`Só <@${session.driverId}> ou quem gerencia o servidor pode desvincular.`),
+        );
+        return;
+      }
+
+      sessions.stop(interaction.guildId);
+      onChange?.();
+      await interaction.reply('Desvinculado e fora do canal de voz.');
+      return;
+    }
+
+    case 'modo': {
+      if (!session) {
+        await interaction.reply(efemero('Use `/vincular` primeiro.'));
+        return;
+      }
+      if (!podeControlar(interaction, session)) {
+        await interaction.reply(
+          efemero(`Só <@${session.driverId}> ou quem gerencia o servidor pode trocar o modo.`),
+        );
+        return;
+      }
+
+      session.player.mode = interaction.options.getString('opcao');
+      await interaction.reply(
+        session.player.mode === 'follow'
+          ? 'Modo **follow**: troquei no Spotify, troco aqui na hora.'
+          : 'Modo **queue**: as trocas entram na fila e tocam em sequência.',
+      );
+      return;
+    }
+
+    case 'agora': {
+      if (!session) {
+        await interaction.reply(efemero('Não estou vinculado a nada neste servidor.'));
+        return;
+      }
+      await interaction.reply({ embeds: [nowPlayingEmbed(session)] });
+      return;
+    }
+
+    case 'pular': {
+      if (!session) {
+        await interaction.reply(efemero('Não estou vinculado a nada neste servidor.'));
+        return;
+      }
+
+      const skipped = session.player.skip();
+      await interaction.reply(
+        skipped ? `Pulei **${skipped.title}**.` : 'Não tem nada tocando para pular.',
+      );
+      return;
+    }
+
+    case 'fila': {
+      if (!session?.player.queue.length) {
+        await interaction.reply(efemero('A fila está vazia.'));
+        return;
+      }
+
+      const lines = session.player.queue
+        .slice(0, 15)
+        .map((track, index) => `\`${index + 1}.\` **${track.title}** — ${track.artists}`);
+      const rest = session.player.queue.length - lines.length;
+
+      await interaction.reply(lines.join('\n') + (rest > 0 ? `\n…e mais ${rest}.` : ''));
+      return;
+    }
+
+    case 'rematch': {
+      if (!session) {
+        await interaction.reply(efemero('Use `/vincular` primeiro.'));
+        return;
+      }
+      if (!podeControlar(interaction, session)) {
+        await interaction.reply(
+          efemero(`Só <@${session.driverId}> ou quem gerencia o servidor pode refazer a busca.`),
+        );
+        return;
+      }
+
+      const track = session.current;
+      if (!track?.id) {
+        await interaction.reply(efemero('Não tem faixa atual para procurar de novo.'));
+        return;
+      }
+
+      // Sem isso o match ruim ficaria colado na faixa para sempre — e o preco
+      // de cachear a escolha do video.
+      invalidateMatch(track.id);
+      await interaction.deferReply();
+      await session.player.play(track);
+
+      await interaction.editReply(
+        session.player.current
+          ? `Agora tocando \`${session.player.current.youtubeTitle}\`.`
+          : `Procurei de novo por **${track.title}**, mas não achei nada melhor.`,
+      );
+      return;
+    }
+
+    default:
+      await interaction.reply(efemero('Comando desconhecido.'));
+  }
+}

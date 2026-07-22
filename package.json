@@ -1,0 +1,33 @@
+{
+  "name": "botdc",
+  "version": "1.0.0",
+  "description": "Bot de Discord que segue em tempo real o que esta tocando no Spotify e toca em call",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "check": "node scripts/selfcheck.js",
+    "test:audio": "node scripts/test-audio.js",
+    "docs:pdf": "node scripts/make-pdf.js",
+    "convite": "node scripts/invite.js",
+    "setup:ytdlp": "node scripts/install-ytdlp.js",
+    "login:spotify": "node scripts/spotify-login.js",
+    "deploy:commands": "node src/discord/deploy.js"
+  },
+  "dependencies": {
+    "@discordjs/voice": "^0.19.2",
+    "discord.js": "^14.27.0",
+    "dotenv": "^17.4.2",
+    "ffmpeg-static": "^5.3.0",
+    "libsodium-wrappers": "^0.8.4"
+  },
+  "allowScripts": {
+    "ffmpeg-static@5.3.0": true
+  },
+  "devDependencies": {
+    "pdf-lib": "^1.17.1"
+  }
+}

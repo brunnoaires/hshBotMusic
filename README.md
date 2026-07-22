@@ -1,0 +1,458 @@
+# botdc
+
+Bot de Discord que segue em tempo real o que está tocando no seu Spotify. Você
+troca a música no celular, o bot troca na call — começando no mesmo ponto em que
+você está.
+
+**Sem login, sem token, sem autorização.** O Discord já publica o Spotify de quem
+conectou a conta, e é de lá que o bot lê. Qualquer pessoa do servidor entra numa
+call, usa `/vincular`, e pronto.
+
+```
+Spotify ──presence do Discord──┐                  ┌── cache ──┐
+                               ├─► watcher ──► resolve ──► ffmpeg ──► canal de voz
+        ──Web API (opcional)───┘   (dedupe)     (yt-dlp)   (ogg/opus)
+```
+
+---
+
+## Aviso
+
+Projeto para uso pessoal, auto-hospedado. Três coisas antes de rodar ou publicar
+um fork:
+
+- **A API do Spotify não entrega áudio** — nenhum endpoint, em nenhum plano. O bot
+  usa só os metadados e reprocura a faixa no YouTube. Essa etapa **viola os termos
+  de uso** do YouTube: é o mesmo mecanismo que derrubou o Groovy e o Rythm. Rodar
+  para você e alguns amigos é uma coisa; operar um bot público é outra.
+- **O `.env` guarda credenciais** — o token do bot e, se você ligar a Web API, um
+  refresh token do Spotify que dá acesso de leitura ao seu histórico de escuta.
+  Está no `.gitignore`; confira antes de commitar.
+- **O `cache/` guarda o seu IP.** As URLs assinadas do YouTube carregam o IP que as
+  requisitou. Também está no `.gitignore` — não publique.
+
+Sem garantia de espécie alguma. Veja a [LICENSE](LICENSE).
+
+---
+
+## Instalação
+
+### 1. Dependências
+
+```bash
+npm install
+```
+
+```bash
+npm run setup:ytdlp
+```
+
+O `npm install` traz o ffmpeg (via `ffmpeg-static`); o `setup:ytdlp` baixa o
+binário oficial do yt-dlp para `bin/`. Nenhum dos dois precisa de Python nem de
+instalação global.
+
+No Windows ele baixa o build **onedir** (`yt-dlp_win.zip`) em vez do `.exe` único.
+O onefile é um pacote PyInstaller que se reextrai a cada execução, custando ~1,6s
+de inicialização toda vez; já descompactado, o mesmo binário inicia em ~0,4s. Como
+são duas chamadas por faixa, isso sozinho cortou ~2,4s do atraso.
+
+Rode o `setup:ytdlp` de novo quando o YouTube quebrar a extração — é sempre a
+primeira coisa a tentar.
+
+### 2. Aplicação no Discord
+
+Em [discord.com/developers/applications](https://discord.com/developers/applications),
+crie uma aplicação e configure:
+
+| Onde | O quê |
+| --- | --- |
+| **Bot → Token** | copie para `DISCORD_TOKEN` |
+| **Bot → Presence Intent** | **ligue.** É privilegiado e obrigatório: é dele que vem o Spotify de todo mundo |
+| **Bot → Public Bot** | ligue, se outras pessoas forem adicionar o bot aos servidores delas |
+| **Bot → Requires OAuth2 Code Grant** | **desligue** (veja [o bot não entra](#o-bot-não-entra-no-servidor)) |
+| **General Information → Application ID** | copie para `DISCORD_CLIENT_ID` |
+
+Copie `.env.example` para `.env` e preencha os dois valores.
+
+Para pegar IDs de usuário ou servidor: ligue o Modo Desenvolvedor no Discord
+(Configurações → Avançado) e clique com o botão direito no nome → Copiar ID.
+
+### 3. Spotify — opcional
+
+**Pode pular.** O bot funciona para qualquer pessoa sem nada disso.
+
+Preencher esta seção liga a Web API para **uma** conta, a de `OWNER_USER_ID`, que
+ganha espelhamento de pausa e prefetch. Veja [o que muda sem a Web
+API](#o-que-muda-sem-a-web-api) e [os tetos reais](#os-tetos-reais).
+
+Em [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) crie
+um app e cadastre exatamente esta Redirect URI:
+
+```
+http://127.0.0.1:8888/callback
+```
+
+O Spotify não aceita mais `localhost` — tem que ser o IP de loopback. Preencha
+`SPOTIFY_CLIENT_ID` e `SPOTIFY_CLIENT_SECRET` no `.env` e rode:
+
+```bash
+npm run login:spotify
+```
+
+Abra o link do terminal, autorize, e cole no `.env` a linha
+`SPOTIFY_REFRESH_TOKEN=` que o script imprime. Esse token não expira.
+
+### 4. Comandos e start
+
+```bash
+npm run deploy:commands
+```
+
+```bash
+npm start
+```
+
+Deixe `DISCORD_GUILD_ID` **vazio** para registro global — é o que faz os comandos
+funcionarem em qualquer servidor. Com um ID preenchido eles só existem naquele
+servidor, o que é útil para testar (aparece na hora) mas é o motivo mais comum de
+"adicionei o bot e não aparece comando nenhum".
+
+---
+
+## Usando
+
+### Para quem vai usar o bot
+
+1. No Discord: **Configurações do Usuário → Conexões → Spotify**, conectar a conta
+   e deixar **"Exibir o Spotify como seu status"** ligado
+2. Não ficar como **Invisível** — ninguém enxerga o status de quem está invisível
+3. Entrar num canal de voz e usar `/vincular`
+
+O comando `/ajuda` explica isso dentro do próprio Discord.
+
+### Comandos
+
+| Comando | O que faz | Quem pode |
+| --- | --- | --- |
+| `/vincular [canal]` | Entra no canal de voz (padrão: o seu) e passa a seguir o **seu** Spotify | qualquer um |
+| `/agora` | Mostra o que está tocando, com progresso e o vídeo escolhido | qualquer um |
+| `/fila` | Lista o que está enfileirado | qualquer um |
+| `/pular` | Pula a faixa atual | qualquer um |
+| `/ajuda` | Lista os comandos e explica como ligar o Spotify | qualquer um |
+| `/desvincular` | Sai do canal e para de seguir | driver 🔒 |
+| `/modo follow\|queue` | `follow` troca na hora; `queue` enfileira e toca em sequência | driver 🔒 |
+| `/rematch` | Achou o vídeo errado? Esquece o match em cache e procura de novo | driver 🔒 |
+
+🔒 = o **driver** (quem rodou `/vincular`) ou quem tem Gerenciar Servidor.
+
+### Uma sessão por servidor
+
+Cada servidor tem player e fila próprios, seguindo o Spotify do driver. A mesma
+pessoa pode comandar vários servidores ao mesmo tempo.
+
+Assumir o lugar de quem já está comandando exige Gerenciar Servidor — sem isso,
+qualquer um derrubaria a sessão alheia no meio da música. Quando o canal de voz
+esvazia, a sessão encerra sozinha.
+
+### Cartão "Reproduzindo agora"
+
+A cada troca de música o bot publica um cartão no canal de texto onde `/vincular`
+foi usado: capa do álbum, faixa com link para o Spotify, quem está sendo seguido,
+o canal de voz, contadores e barra de progresso. O cartão anterior é apagado a
+cada troca, para o canal não virar um mural. Desliga com `ANNOUNCE_TRACKS=false`.
+
+---
+
+## Adicionando em outros servidores
+
+Gere o link de convite com:
+
+```bash
+npm run convite
+```
+
+Ele calcula as permissões a partir do que o código realmente usa e já inclui o
+escopo `bot`. Não monte a URL à mão: além de `Connect` e `Speak` para o áudio, o
+cartão precisa de `Enviar Mensagens`, `Inserir Links` e `Anexar Arquivos`, e sem
+elas ele falha em silêncio.
+
+O bot precisa continuar rodando na sua máquina: cada servidor conectado abre uma
+conexão de voz e processos próprios de yt-dlp e ffmpeg.
+
+### O bot não entra no servidor
+
+Autorizou, a tela fechou, e o bot não apareceu na lista de membros. Em ordem de
+frequência:
+
+| Causa | Onde arrumar |
+| --- | --- |
+| **Requires OAuth2 Code Grant ligado** | Developer Portal → Bot → desligue. Ligado, o Discord espera uma troca de código que não existe aqui, e a autorização termina sem o bot entrar. |
+| **URL sem o escopo `bot`** | Só com `applications.commands` o convite instala os comandos e o bot não entra. Use `npm run convite`. |
+| **Public Bot desligado** | Developer Portal → Bot → ligue. Desligado, só você consegue adicionar. |
+| **Quem clicou não tem Gerenciar Servidor** | O servidor nem aparece na lista de destinos. |
+
+Se os comandos aparecem mas o bot não está no servidor, é o escopo `bot` faltando.
+
+### Comandos duplicados
+
+É registro de servidor sobrando junto com o global — o Discord exibe os dois
+conjuntos. Com `DISCORD_GUILD_ID` vazio, o `deploy:commands` varre os servidores
+do bot, apaga os registros de servidor e refaz o global. Resolve numa rodada e
+diz quantos limpou.
+
+### Os tetos reais
+
+- **Spotify: 25 usuários.** Um app em modo de desenvolvimento exige cadastrar cada
+  pessoa manualmente (nome e e-mail) no painel. Extended Quota passa por revisão da
+  Spotify, e ler o que toca para reproduzir de outra fonte é justamente o tipo de
+  uso que eles recusam. Por isso a Web API é opcional e vale para uma conta só.
+- **Discord: 100 servidores** sem verificação. Verificar exige justificar o Presence
+  Intent, que é privilegiado — difícil de aprovar para um bot que lê o que os
+  outros ouvem.
+- **Sua máquina.** Cada servidor ativo é uma conexão de voz mais um ffmpeg.
+
+Entre amigos funciona bem. Bot público não é.
+
+---
+
+## Como funciona
+
+### Detecção: duas fontes
+
+| | Presence do Discord | Web API do Spotify |
+| --- | --- | --- |
+| Como chega | push, ~1s | consulta a cada 3s |
+| Precisa de credencial | não | sim (uma conta só) |
+| Progresso exato | derivado dos timestamps | em milissegundos |
+| Detecta pausa | não | sim |
+| Lê a fila | não | sim |
+
+Quando as duas estão disponíveis, a API é a fonte da verdade e a presence serve
+de gatilho rápido: ao ver um ID diferente, o bot **já começa a resolver** com os
+dados da presence em vez de esperar a ida e volta da API — são ~300ms a menos de
+silêncio. A consulta seguinte refina progresso e estado, e a deduplicação por ID
+garante que a música não toque duas vezes.
+
+Podcasts e episódios são ignorados: só faixas de música.
+
+#### O que muda sem a Web API
+
+| Recurso | Só presence (todos) | Presence + API (`OWNER_USER_ID`) |
+| --- | --- | --- |
+| Trocar de faixa junto | sim | sim |
+| Sincronizar a posição | sim | sim |
+| Espelhar pausa e retomada | não | sim |
+| Prefetch (troca instantânea) | não | sim |
+
+### De onde vem o áudio
+
+Como o Spotify não entrega áudio, cada faixa é reprocurada **no YouTube**, via
+yt-dlp. A query é `"artista - título"`, montada com os metadados do Spotify.
+
+A busca traz cinco candidatos (passada barata, sem extrair formato de nenhum) e o
+ranking escolhe um:
+
+- **Duração** é o sinal mais forte — dentro de ±3s do que o Spotify informou vale
+  +60; a pontuação cai conforme se afasta
+- **Canal `- Topic`** vale +30 — são os uploads automáticos da gravadora
+- **−45** para títulos com marcador de versão diferente (live, cover, karaokê,
+  nightcore, sped up, 8d), mas só se a faixa original não tiver esses termos no
+  nome — quem ouve uma gravação ao vivo de verdade não é penalizado
+
+Só o vencedor tem a URL de áudio extraída. O ffmpeg transcodifica para ogg/opus a
+128 kbps, 48 kHz, estéreo — que é o que o Discord aceita direto, dispensando um
+encoder opus nativo.
+
+Confira a escolha com `/agora`; corrija com `/rematch`.
+
+### Sincronização de posição
+
+Com `SYNC_POSITION` ligado (padrão), o ffmpeg entra no mesmo ponto em que o seu
+Spotify está, **já somando o tempo gasto na busca**. Você não ouve a faixa
+atrasada — só espera menos.
+
+### Cache
+
+Resolver uma faixa custa duas chamadas ao yt-dlp: a busca e a extração da URL.
+Duas camadas em `cache/resolve.json` cortam isso:
+
+| Chave | Guarda | Vence |
+| --- | --- | --- |
+| `match:<id do spotify>` | id do vídeo no YouTube | nunca — a escolha não muda |
+| `stream:<id do vídeo>` | URL assinada e cabeçalhos | junto com a assinatura, menos 15min de margem |
+
+A margem de 15 minutos existe para a URL não vencer no meio de uma faixa longa. O
+arquivo tem escrita atômica, teto de 2000 entradas e descarte do menos usado.
+
+O efeito colateral é que **um match ruim fica colado na faixa** — é para isso que
+serve o `/rematch`. Para zerar tudo, apague `cache/resolve.json`.
+
+### Prefetch
+
+O cache só ajuda na segunda vez. Para a **primeira** também ser instantânea, o bot
+consulta a fila do Spotify cinco segundos depois de cada troca e resolve as duas
+próximas faixas enquanto a atual toca. Ouvindo álbum ou playlist na ordem, a troca
+já está pronta.
+
+Os cinco segundos são de propósito: logo após a troca, a faixa atual ainda está
+resolvendo, e não vale competir com ela por rede e CPU. É best-effort — se a fila
+não vier, a faixa resolve na hora de tocar, como antes.
+
+#### Resultado medido
+
+| Situação | Tempo até tocar |
+| --- | --- |
+| Sequência normal de playlist ou álbum (pré-buscada) | ~1 ms |
+| Faixa já tocada antes, URL vencida | ~1,6 s |
+| Faixa nova e fora da fila (pulo aleatório) | ~3,4 s |
+
+### Barra de progresso
+
+Embed do Discord não renderiza gradiente nem alça circular, então a barra é uma
+**imagem PNG gerada na hora**. O preenchimento vai do preto ao branco, ancorado na
+largura preenchida para terminar sempre claro na alça, em vez de sumir no escuro
+quando a música está no começo. A alça branca tem contorno escuro para continuar
+visível também no tema claro.
+
+Nada disso usa biblioteca gráfica: os pixels são rasterizados à mão e o PNG é
+codificado com o `zlib` do próprio Node, em
+[progressbar.js](src/discord/progressbar.js). Os dígitos dos tempos saem de uma
+fonte 5x7 desenhada no próprio arquivo.
+
+### Tolerância a falhas
+
+- **URL vencida ou recusada** — o ffmpeg morre em segundos sem produzir som. O bot
+  detecta, descarta a URL do cache e tenta uma vez com uma nova.
+- **Vídeo removido, privado ou bloqueado** — o vínculo com aquele vídeo é desfeito
+  e a busca, refeita.
+- **Troca rápida de música** — resoluções obsoletas são descartadas, então a faixa
+  antiga nunca começa a tocar por cima da nova.
+- **Queda na conexão de voz** — se for troca de região, reata sozinho; se for perda
+  real, sai do canal de forma limpa.
+- **Rate limit do Spotify** — recua pelo tempo indicado, sem derrubar o bot.
+- **Cache corrompido** — começa vazio, sem impedir a inicialização.
+- **Encerramento** — o cache é gravado antes de sair.
+
+---
+
+## Configuração
+
+Tudo vem do `.env`. Variáveis obrigatórias ausentes são apontadas pelo nome na
+inicialização.
+
+| Variável | Para que serve |
+| --- | --- |
+| `DISCORD_TOKEN` | Token do bot. **Obrigatório.** |
+| `DISCORD_CLIENT_ID` | Application ID, usado no registro dos comandos. **Obrigatório.** |
+| `DISCORD_GUILD_ID` | Servidor onde registrar os comandos. Vazio = global, que é o que você quer se outras pessoas vão usar. |
+| `OWNER_USER_ID` | Opcional. Identifica de quem é a conta do Spotify abaixo. |
+| `SPOTIFY_CLIENT_ID` | Opcional. Credencial da Web API. |
+| `SPOTIFY_CLIENT_SECRET` | Opcional. Credencial da Web API. |
+| `SPOTIFY_REFRESH_TOKEN` | Gerado por `npm run login:spotify`. Não expira. |
+| `SPOTIFY_REDIRECT_URI` | Padrão `http://127.0.0.1:8888/callback`. Loopback obrigatório. |
+| `POLL_INTERVAL_MS` | Intervalo de consulta à Web API. Padrão `3000`. |
+| `DEFAULT_MODE` | `follow` ou `queue`. Padrão `follow`. |
+| `SYNC_POSITION` | Começar no mesmo ponto do seu Spotify. Padrão ligado. |
+| `ANNOUNCE_TRACKS` | Publicar o cartão a cada troca. Padrão ligado. |
+| `LOG_LEVEL` | `debug`, `info`, `warn` ou `error`. Padrão `info`. |
+
+---
+
+## Comandos de terminal
+
+| Comando | O que faz |
+| --- | --- |
+| `npm start` | Liga o bot |
+| `npm run convite` | Imprime o link de convite com as permissões corretas |
+| `npm run setup:ytdlp` | Baixa ou atualiza o yt-dlp |
+| `npm run login:spotify` | Login no Spotify, imprime o refresh token |
+| `npm run deploy:commands` | Registra os slash commands e limpa duplicatas |
+| `npm run check` | Checagem offline, sem credenciais |
+| `npm run test:audio` | Diagnóstico da cadeia de áudio |
+| `npm run docs:pdf` | Gera `botdc-funcionalidades.pdf` |
+
+### Diagnóstico
+
+```bash
+npm run check
+```
+
+Verifica binários, carregamento dos módulos, montagem dos slash commands, cache,
+roteamento entre servidores e a lógica de detecção. Não precisa de token nem de
+conta do Spotify.
+
+```bash
+npm run test:audio "Radiohead - Weird Fishes" 60
+```
+
+Testa a cadeia yt-dlp → ffmpeg isolada do Discord: procura a faixa, transcodifica
+a partir do segundo 60 e confirma que sai ogg/opus válido. É por aqui que se
+começa quando "o bot conecta mas não sai som".
+
+Para logs detalhados, incluindo o ranking dos candidatos e o stderr do ffmpeg,
+use `LOG_LEVEL=debug`.
+
+---
+
+## Limitações conhecidas
+
+- **~3,4s de atraso** numa faixa que o bot nunca viu e que não estava na fila do
+  Spotify — pular no meio de uma playlist, por exemplo. Sequência normal e faixas
+  repetidas ficam em ~0.
+- **O piso é o yt-dlp**, que gasta ~1,6s por chamada e não tem modo servidor. Para
+  ir abaixo só trocando a fonte de áudio.
+- **O match nem sempre é perfeito** — a escolha do vídeo é heurística.
+- **Um canal de voz por servidor**, seguindo uma pessoa por vez.
+- **Podcasts são ignorados** — só faixas de música.
+- Se o YouTube apertar o cerco na extração, o `setup:ytdlp` atualiza o binário. É a
+  manutenção recorrente deste tipo de bot.
+
+---
+
+## Estrutura
+
+```
+src/
+  index.js           liga tudo: eventos do Discord -> sessões
+  session.js         uma sessão por servidor, roteada por driver
+  config.js          .env validado
+  logger.js
+  spotify/
+    api.js           refresh token, faixa atual e fila
+    presence.js      lê a atividade do Spotify na presence
+    watcher.js       funde as duas fontes, deduplica, emite eventos
+  audio/
+    resolve.js       metadados -> URL de áudio (busca, ranking, cache)
+    prefetch.js      resolve as próximas da fila antecipadamente
+    cache.js         store JSON com expiração e LRU
+    ytdlp.js         wrapper do binário
+    ffmpeg.js        transcodificação para ogg/opus
+    player.js        conexão de voz, fila, troca de faixa, retentativa
+  discord/
+    commands.js      slash commands e handlers
+    nowplaying.js    cartão "Reproduzindo agora"
+    progressbar.js   barra de progresso em PNG, sem dependências
+    deploy.js        registro dos comandos
+scripts/
+  install-ytdlp.js   baixa o binário
+  invite.js          monta o link de convite
+  spotify-login.js   OAuth para obter o refresh token
+  selfcheck.js       checagem offline
+  test-audio.js      diagnóstico da cadeia de áudio
+  make-pdf.js        gera a documentação em PDF
+```
+
+O `npm run docs:pdf` gera `botdc-funcionalidades.pdf`, com sete páginas cobrindo
+o mesmo conteúdo em formato de consulta. Usa `pdf-lib`, que é devDependency.
+
+---
+
+## Documentos
+
+- [Termos de Serviço](TERMS.md) e [Política de Privacidade](PRIVACY.md) — o
+  Developer Portal do Discord exige um link público para os dois. Cole as URLs
+  destes arquivos em **General Information → Terms of Service / Privacy Policy**.
+- [Licença MIT](LICENSE)
+
+Se você rodar sua própria instância, troque o responsável nos dois documentos:
+quem hospeda é quem responde pelos dados de quem usa aquela instância.
