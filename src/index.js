@@ -69,7 +69,17 @@ client.on(Events.VoiceStateUpdate, (oldState) => {
   atualizarStatus(client, sessions);
 });
 
+// Com o convite circulando, gente desconhecida adiciona o bot. Sem esses dois
+// logs voce so descobre que isso aconteceu quando alguem usa um comando.
+client.on(Events.GuildCreate, (guild) => {
+  log.info(
+    `adicionado em "${guild.name}" (${guild.id}), ${guild.memberCount} membros — ` +
+      `agora em ${client.guilds.cache.size} servidor(es)`,
+  );
+});
+
 client.on(Events.GuildDelete, (guild) => {
+  log.info(`removido de "${guild.name}" (${guild.id})`);
   if (sessions.stop(guild.id)) atualizarStatus(client, sessions);
 });
 

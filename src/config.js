@@ -38,6 +38,7 @@ export const config = {
   },
   pollIntervalMs: Math.max(1500, Number(optional('POLL_INTERVAL_MS', '3000'))),
   announceTracks: bool('ANNOUNCE_TRACKS', true),
+  maxSessions: Math.max(1, Number(optional('MAX_SESSIONS', '10'))),
   defaultMode: optional('DEFAULT_MODE', 'follow') === 'queue' ? 'queue' : 'follow',
   syncPosition: bool('SYNC_POSITION', true),
 };

@@ -200,6 +200,31 @@ conjuntos. Com `DISCORD_GUILD_ID` vazio, o `deploy:commands` varre os servidores
 do bot, apaga os registros de servidor e refaz o global. Resolve numa rodada e
 diz quantos limpou.
 
+### Deixando aberto para qualquer pessoa
+
+Se você vai distribuir o link livremente, entenda que **você continua sendo o
+operador de todo mundo**: o bot roda na sua máquina, e é o seu terminal que
+mostra quem vinculou e cada faixa que tocam. Isso é inerente — um bot que
+reproduz o que você ouve precisa saber o que você ouve.
+
+Dois limites protegem a instância de uso aberto:
+
+- **`MAX_SESSIONS`** (padrão 10) — cada sessão é ~128 kbps de upload contínuo mais
+  um ffmpeg. 10 simultâneas são ~1,3 Mbps de subida sustentada. Passando do teto,
+  o `/vincular` recusa explicando, em vez de todos ouvirem áudio picotado sem
+  entender o motivo. Banda de upload costuma ser o gargalo antes da CPU.
+- **`YTDLP_CONCURRENCY`** (padrão 3) — todas as buscas saem do mesmo IP. Sem fila,
+  dez pessoas trocando de música ao mesmo tempo disparariam vinte processos numa
+  rajada, e o 429 do YouTube degradaria o bot para todos. Medido com seis resolves
+  simultâneos: o pico fica em 3 e os seis completam em ~6s.
+
+O bot também registra no log quando é adicionado ou removido de um servidor —
+sem isso você só descobriria que alguém adicionou quando um comando fosse usado.
+
+Se preferir **não** ser o operador de estranhos, o caminho é o inverso: cada
+pessoa clona o repositório e roda a própria instância. Aí cada uma vê só os
+próprios usuários, e você não vê nada.
+
 ### Os tetos reais
 
 - **Spotify: 25 usuários.** Um app em modo de desenvolvimento exige cadastrar cada
@@ -354,6 +379,8 @@ inicialização.
 | `DEFAULT_MODE` | `follow` ou `queue`. Padrão `follow`. |
 | `SYNC_POSITION` | Começar no mesmo ponto do seu Spotify. Padrão ligado. |
 | `ANNOUNCE_TRACKS` | Publicar o cartão a cada troca. Padrão ligado. |
+| `MAX_SESSIONS` | Servidores tocando ao mesmo tempo. Padrão `10`. |
+| `YTDLP_CONCURRENCY` | Chamadas ao yt-dlp em paralelo. Padrão `3`. |
 | `LOG_LEVEL` | `debug`, `info`, `warn` ou `error`. Padrão `info`. |
 
 ---

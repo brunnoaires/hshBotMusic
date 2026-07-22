@@ -145,6 +145,82 @@ check('cartao de "reproduzindo agora" monta dentro dos limites', async () => {
   return 'cartao completo e versao minima ok';
 });
 
+check('semaforo respeita o limite e nao perde vaga em erro', async () => {
+  const { criarSemaforo } = await import('../src/audio/semaforo.js');
+  const semaforo = criarSemaforo(2);
+
+  let simultaneos = 0;
+  let pico = 0;
+
+  const tarefa = () =>
+    semaforo.executar(async () => {
+      simultaneos++;
+      pico = Math.max(pico, simultaneos);
+      await new Promise((r) => setTimeout(r, 20));
+      simultaneos--;
+    });
+
+  await Promise.all(Array.from({ length: 8 }, tarefa));
+  if (pico > 2) throw new Error(`rodaram ${pico} ao mesmo tempo, limite era 2`);
+  if (pico < 2) throw new Error(`so ${pico} em paralelo; a fila esta serializando demais`);
+
+  // Tarefa que lanca nao pode reter a vaga, senao o bot trava de vez apos
+  // alguns erros de rede.
+  await Promise.allSettled(
+    Array.from({ length: 4 }, () => semaforo.executar(async () => { throw new Error('falhou'); })),
+  );
+  const { ativos, esperando } = semaforo.status();
+  if (ativos !== 0 || esperando !== 0) {
+    throw new Error(`vagas vazaram apos erro: ativos=${ativos} esperando=${esperando}`);
+  }
+
+  // E depois disso o semaforo ainda tem que funcionar normalmente.
+  let rodou = false;
+  await semaforo.executar(async () => { rodou = true; });
+  if (!rodou) throw new Error('semaforo travou depois dos erros');
+
+  return `pico ${pico}/2, vagas devolvidas apos erro`;
+});
+
+check('sessoes respeitam o teto de servidores simultaneos', async () => {
+  const { SessionManager } = await import('../src/session.js');
+
+  const criarPlayer = () => ({
+    queue: [], current: null, mode: 'follow',
+    join: async () => {}, leave() {}, skip: () => null,
+    pause() {}, resume() {}, onSpotifyTrack() {},
+  });
+
+  const sessions = new SessionManager({
+    config: {
+      discord: {}, defaultMode: 'follow', syncPosition: true,
+      pollIntervalMs: 60_000, maxSessions: 2, announceTracks: false,
+    },
+    ownerApi: { enabled: false },
+    criarPlayer,
+  });
+
+  await sessions.start({ channel: { guild: { id: 'g1' } }, driverId: 'a' });
+  await sessions.start({ channel: { guild: { id: 'g2' } }, driverId: 'b' });
+
+  let recusou = false;
+  try {
+    await sessions.start({ channel: { guild: { id: 'g3' } }, driverId: 'c' });
+  } catch (err) {
+    recusou = err.message.includes('limite');
+  }
+  if (!recusou) throw new Error('deveria recusar acima do teto');
+  if (sessions.size !== 2) throw new Error(`ficaram ${sessions.size} sessoes`);
+
+  // Servidor que ja tem sessao pode reiniciar mesmo no teto, senao quem ja
+  // estava usando perderia o /vincular so porque o bot esta cheio.
+  await sessions.start({ channel: { guild: { id: 'g1' } }, driverId: 'a' });
+  if (sessions.size !== 2) throw new Error('reiniciar sessao existente nao pode contar como nova');
+
+  sessions.stopAll();
+  return 'recusa acima do teto, permite reiniciar existente';
+});
+
 check('sessoes isolam servidores e roteiam por driver', async () => {
   const { SessionManager } = await import('../src/session.js');
 

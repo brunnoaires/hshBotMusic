@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { criarSemaforo } from './semaforo.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -29,17 +30,28 @@ export function isInstalled() {
   return existsSync(BIN_PATH);
 }
 
+// Trocar um pouco de latencia em pico por nao levar o IP para a lista negra do
+// YouTube. Fora de pico, a fila esta vazia e ninguem espera.
+const semaforo = criarSemaforo(Number(process.env.YTDLP_CONCURRENCY ?? 3));
+
+/** Quantas chamadas rodam e quantas esperam; util com LOG_LEVEL=debug. */
+export const statusFila = () => semaforo.status();
+
 /**
  * Roda o yt-dlp e devolve o JSON do stdout.
  *
  * O yt-dlp fala bastante no stderr mesmo quando da certo, entao o unico
  * criterio de sucesso e o exit code.
  */
-export function runJson(args) {
+export async function runJson(args) {
   if (!isInstalled()) {
     throw new Error(`yt-dlp nao encontrado em ${BIN_PATH}. Rode: npm run setup:ytdlp`);
   }
 
+  return semaforo.executar(() => executar(args));
+}
+
+function executar(args) {
   return new Promise((resolve, reject) => {
     const proc = spawn(BIN_PATH, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 

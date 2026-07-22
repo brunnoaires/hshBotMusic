@@ -107,6 +107,16 @@ export class SessionManager {
 
   async start({ channel, driverId, announceChannelId = null }) {
     const guildId = channel.guild.id;
+
+    // Cada sessao e ~128 kbps de upload continuo mais um ffmpeg. Sem teto, o
+    // gargalo aparece como audio picotando para todos ao mesmo tempo, sem
+    // nenhuma pista do motivo. Melhor recusar a nova e dizer o porque.
+    if (!this.#sessions.has(guildId) && this.#sessions.size >= this.#config.maxSessions) {
+      throw new Error(
+        `limite de ${this.#config.maxSessions} servidores tocando ao mesmo tempo atingido`,
+      );
+    }
+
     this.stop(guildId);
 
     const session = new GuildSession({
