@@ -62,7 +62,8 @@ check('commands.js constroi os slash commands', async () => {
   const { commands } = await import('../src/discord/commands.js');
   const names = commands.map((c) => c.name);
   const esperados = [
-    'vincular', 'desvincular', 'modo', 'agora', 'pular', 'fila', 'rematch', 'sr', 'ajuda',
+    'vincular', 'desvincular', 'modo', 'agora', 'pular', 'pausar', 'retomar',
+    'fila', 'limpar', 'rematch', 'sr', 'ajuda',
   ];
   for (const n of esperados) {
     if (!names.includes(n)) throw new Error(`faltou /${n}`);
@@ -317,6 +318,50 @@ check('jukebox: primeiro pedido toca, os seguintes enfileiram', async () => {
 
   sessions.stopAll();
   return 'toca a primeira, enfileira b e c, sem duplicar';
+});
+
+check('pausa por comando tem precedencia sobre o Spotify', async () => {
+  const { SessionManager } = await import('../src/session.js');
+
+  const criarPlayer = () => ({
+    queue: [], current: { id: 'a' }, carregando: false, mode: 'follow',
+    tocando: true,
+    join: async () => {}, leave() {}, skip: () => null, play: async () => {},
+    onSpotifyTrack() {},
+    pause() { this.tocando = false; return true; },
+    resume() { this.tocando = true; return true; },
+  });
+
+  const sessions = new SessionManager({
+    config: {
+      discord: {}, defaultMode: 'follow', syncPosition: true,
+      pollIntervalMs: 60_000, maxSessions: 10, announceTracks: false,
+    },
+    ownerApi: { enabled: false },
+    criarPlayer,
+  });
+
+  const s = await sessions.start({ channel: { guild: { id: 'g1' } }, driverId: 'ana' });
+
+  // Pausa por comando, e o Spotify manda retomar logo em seguida.
+  s.player.pause();
+  s.pausadoPorComando = true;
+  s.watcher.emit('resumed', {});
+  if (s.player.tocando) throw new Error('o Spotify retomou por cima da pausa por comando');
+
+  // Sem a marca, o espelhamento normal volta a valer.
+  s.pausadoPorComando = false;
+  s.watcher.emit('resumed', {});
+  if (!s.player.tocando) throw new Error('sem pausa por comando, o Spotify deveria retomar');
+
+  // Trocar de faixa limpa a pausa: quem troca quer ouvir a nova.
+  s.player.pause();
+  s.pausadoPorComando = true;
+  s.watcher.emit('track', { id: 'b', title: 'b', artists: 'x' });
+  if (s.pausadoPorComando) throw new Error('faixa nova deveria limpar a pausa por comando');
+
+  sessions.stopAll();
+  return 'comando vence o Spotify, e troca de faixa reseta';
 });
 
 check('sessoes isolam servidores e roteiam por driver', async () => {

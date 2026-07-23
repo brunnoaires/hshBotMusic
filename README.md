@@ -142,12 +142,21 @@ O comando `/ajuda` explica isso dentro do próprio Discord.
 | `/agora` | Mostra o que está tocando, com progresso e o vídeo escolhido | qualquer um |
 | `/fila` | Lista o que está enfileirado | qualquer um |
 | `/pular` | Pula a faixa atual | qualquer um |
+| `/pausar` | Pausa o que está tocando | qualquer um |
+| `/retomar` | Retoma o que estava pausado | qualquer um |
 | `/ajuda` | Lista os comandos e explica como ligar o Spotify | qualquer um |
 | `/desvincular` | Sai do canal e para de seguir | driver 🔒 |
 | `/modo follow\|queue` | `follow` troca na hora; `queue` enfileira e toca em sequência | driver 🔒 |
+| `/limpar` | Esvazia a fila sem parar a faixa atual | driver 🔒 |
 | `/rematch` | Achou o vídeo errado? Esquece o match em cache e procura de novo | driver 🔒 |
 
-🔒 = o **driver** (quem rodou `/vincular`) ou quem tem Gerenciar Servidor.
+🔒 = o **driver** (quem rodou `/vincular`) ou quem tem Gerenciar Servidor. Em
+[modo jukebox](#sem-spotify-modo-jukebox) não há driver, então tudo fica aberto.
+
+`/pausar` tem precedência sobre o Spotify: enquanto estiver pausado por comando,
+o bot não retoma sozinho mesmo que o Spotify volte a tocar. Sem isso, quem
+pausasse pelo bot veria a música voltar sozinha no evento seguinte, sem entender
+o motivo. Trocar de faixa limpa essa marca — quem troca quer ouvir a nova.
 
 ### Sem Spotify: modo jukebox
 

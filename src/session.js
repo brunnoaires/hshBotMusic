@@ -33,14 +33,28 @@ class GuildSession {
     this.announceChannelId = announceChannelId ?? null;
     this.announceMessage = null;
 
+    /** Pausado por /pausar. Impede o Spotify de retomar por conta propria. */
+    this.pausadoPorComando = false;
+
     this.player = criarPlayer({ mode: config.defaultMode, syncPosition: config.syncPosition });
     this.watcher = new SpotifyWatcher({ api, intervalMs: config.pollIntervalMs });
 
-    this.watcher.on('track', (track) => void this.player.onSpotifyTrack(track));
+    this.watcher.on('track', (track) => {
+      // Trocou de musica: se estava pausado por comando, a intencao evidente e
+      // ouvir a nova.
+      this.pausadoPorComando = false;
+      void this.player.onSpotifyTrack(track);
+    });
     this.watcher.on('upcoming', (tracks) => void prefetch(tracks));
     this.watcher.on('paused', () => this.player.pause());
-    this.watcher.on('resumed', () => this.player.resume());
     this.watcher.on('stopped', () => this.player.skip());
+
+    // Pausa pedida por comando tem precedencia sobre o estado do Spotify.
+    // Sem isso, quem pausasse pelo bot veria a musica voltar sozinha no
+    // proximo evento, sem entender o motivo.
+    this.watcher.on('resumed', () => {
+      if (!this.pausadoPorComando) this.player.resume();
+    });
 
     // Arrastou a barra no Spotify: retoca a posicao daqui. A URL do audio ja
     // esta em cache, entao isso e so respawnar o ffmpeg noutro ponto — barato o

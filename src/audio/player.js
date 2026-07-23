@@ -245,12 +245,14 @@ export class SyncPlayer {
     return skipped;
   }
 
+  /** @returns {boolean} se havia algo tocando para pausar. */
   pause() {
-    this.#audioPlayer.pause();
+    return this.#audioPlayer.pause();
   }
 
+  /** @returns {boolean} se havia algo pausado para retomar. */
   resume() {
-    this.#audioPlayer.unpause();
+    return this.#audioPlayer.unpause();
   }
 
   #killFfmpeg() {

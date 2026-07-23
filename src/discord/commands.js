@@ -43,7 +43,10 @@ export const commands = [
     .setName('agora')
     .setDescription('Mostra o que está tocando, com progresso e o vídeo escolhido'),
   new SlashCommandBuilder().setName('pular').setDescription('Pula a faixa atual'),
+  new SlashCommandBuilder().setName('pausar').setDescription('Pausa o que está tocando'),
+  new SlashCommandBuilder().setName('retomar').setDescription('Retoma o que estava pausado'),
   new SlashCommandBuilder().setName('fila').setDescription('Lista as faixas enfileiradas'),
+  new SlashCommandBuilder().setName('limpar').setDescription('Esvazia a fila sem parar a faixa atual'),
   new SlashCommandBuilder()
     .setName('rematch')
     .setDescription('Achou o vídeo errado? Esquece o match em cache e procura de novo'),
@@ -64,7 +67,7 @@ export const commands = [
 ].map((command) => command.toJSON());
 
 /** Comandos que mexem na sessao alheia; ver podeControlar(). */
-const RESTRITOS = new Set(['desvincular', 'modo', 'rematch']);
+const RESTRITOS = new Set(['desvincular', 'modo', 'rematch', 'limpar']);
 
 const efemero = (content) => ({ content, flags: MessageFlags.Ephemeral });
 
@@ -155,7 +158,8 @@ export function ajudaEmbed() {
         name: '🔒 Quem pode usar',
         value:
           'Os marcados com cadeado são de quem rodou `/vincular` ou de quem tem ' +
-          '**Gerenciar Servidor**. O resto é livre para todo mundo.',
+          '**Gerenciar Servidor**. O resto é livre para todo mundo. Em modo jukebox ' +
+          '(sem ninguém vinculado), tudo fica aberto — a fila é coletiva.',
       },
       {
         name: 'Primeira vez aqui?',
@@ -427,9 +431,65 @@ export async function handleCommand(interaction, { sessions, config, onChange })
         return;
       }
 
+      session.pausadoPorComando = false;
       const skipped = session.player.skip();
       await interaction.reply(
         skipped ? `Pulei **${skipped.title}**.` : 'Não tem nada tocando para pular.',
+      );
+      return;
+    }
+
+    case 'pausar': {
+      if (!session) {
+        await interaction.reply(efemero('Não estou tocando nada neste servidor.'));
+        return;
+      }
+      if (!session.player.pause()) {
+        await interaction.reply(efemero('Não tem nada tocando para pausar.'));
+        return;
+      }
+
+      session.pausadoPorComando = true;
+      await interaction.reply(
+        'Pausado.' +
+          (session.manual
+            ? ''
+            : ' Enquanto estiver assim, não retomo sozinho mesmo que o Spotify volte a tocar.'),
+      );
+      return;
+    }
+
+    case 'retomar': {
+      if (!session) {
+        await interaction.reply(efemero('Não estou tocando nada neste servidor.'));
+        return;
+      }
+
+      session.pausadoPorComando = false;
+      await interaction.reply(
+        session.player.resume() ? 'Retomado.' : 'Não tem nada pausado para retomar.',
+      );
+      return;
+    }
+
+    case 'limpar': {
+      if (!session) {
+        await interaction.reply(efemero('Não estou vinculado a nada neste servidor.'));
+        return;
+      }
+      if (!podeControlar(interaction, session)) {
+        await interaction.reply(
+          efemero(`Só <@${session.driverId}> ou quem gerencia o servidor pode limpar a fila.`),
+        );
+        return;
+      }
+
+      const quantas = session.player.queue.length;
+      session.player.queue = [];
+      await interaction.reply(
+        quantas
+          ? `Fila esvaziada (${quantas} ${quantas === 1 ? 'faixa' : 'faixas'}). A atual continua tocando.`
+          : 'A fila já estava vazia.',
       );
       return;
     }
