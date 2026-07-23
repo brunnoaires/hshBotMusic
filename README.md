@@ -523,6 +523,39 @@ E no `.env`: `YTDLP_COOKIES=/opt/botdc/cookies.txt`
 Se isso virar incômodo demais, o sinal é claro: **IP residencial não tem esse
 problema.** Um Raspberry Pi em casa resolve de vez.
 
+### No Windows, sem janela aberta
+
+Se você vai rodar no próprio PC, dá para o bot subir junto com o Windows e ficar
+sem nenhuma janela de terminal:
+
+```bash
+powershell -ExecutionPolicy Bypass -File deploy\install-windows.ps1
+```
+
+Registra uma tarefa agendada no seu usuário — **não precisa de administrador**.
+Ela sobe no logon, reinicia sozinha se o bot cair, e não para quando o notebook
+vai para a bateria.
+
+Como não há janela, a saída vai para `botdc.log` na raiz do projeto. É o único
+jeito de descobrir por que o bot parou:
+
+```bash
+Get-Content botdc.log -Tail 30 -Wait
+```
+
+| Ação | Comando |
+| --- | --- |
+| Parar agora | `Stop-ScheduledTask -TaskName botdc` |
+| Subir de novo | `Start-ScheduledTask -TaskName botdc` |
+| Desinstalar | `powershell -ExecutionPolicy Bypass -File deploy\install-windows.ps1 -Remover` |
+
+⚠️ Antes de instalar, **encerre o `npm start`** que estiver aberto. Duas
+instâncias com o mesmo token respondem em duplicado a cada comando e brigam pela
+conexão de voz.
+
+O bot só roda com o PC ligado e com você logado. Para 24/7 de verdade, veja as
+opções abaixo.
+
 ### Passo a passo na Oracle Cloud
 
 > **Onde cada coisa roda:** os passos 1 a 3 são no navegador, no painel da Oracle.
@@ -791,6 +824,8 @@ src/
 deploy/
   botdc.service      unidade systemd para rodar 24/7
   setup.sh           instala e atualiza numa máquina Linux
+  install-windows.ps1  registra tarefa agendada no Windows
+  start-hidden.vbs   sobe o bot sem janela de terminal
 scripts/
   install-ytdlp.js   baixa o binário
   invite.js          monta o link de convite
