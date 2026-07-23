@@ -455,6 +455,10 @@ O que esperar na prática:
 
 ### Passo a passo na Oracle Cloud
 
+> **Onde cada coisa roda:** os passos 1 a 3 são no navegador, no painel da Oracle.
+> A partir do 4, você se conecta à VM por SSH e digita tudo lá dentro — nada disso
+> roda no seu computador, e **não é preciso ter Linux** para usar.
+
 **1. Criar a conta** em [cloud.oracle.com](https://cloud.oracle.com) → *Start for
 free*. Pede cartão para verificação, mas o Always Free não cobra.
 
@@ -478,11 +482,42 @@ o *availability domain*, tente em outro horário, ou use `VM.Standard.E2.1.Micro
 **3. Nada de firewall a abrir.** O bot só faz conexões de saída; o Discord
 conecta-se a partir dele. A porta 22 já vem liberada para o SSH.
 
-**4. Conectar e instalar:**
+**4. Conectar.** Você não instala Linux em lugar nenhum: o Linux é a VM alugada,
+e do seu computador você só se conecta nela por SSH. Daí em diante, tudo o que
+for digitado roda **na VM**, não na sua máquina.
+
+<details>
+<summary><b>No Windows</b> (o SSH já vem instalado; não precisa de PuTTY)</summary>
+
+Guarde a chave que a Oracle gerou em `%USERPROFILE%\.ssh\`. Antes de usar, ajuste
+as permissões — o OpenSSH recusa chave que outros usuários possam ler, e o erro
+(`UNPROTECTED PRIVATE KEY FILE`) não diz o que fazer:
+
+```powershell
+icacls "$env:USERPROFILE\.ssh\oracle.key" /inheritance:r /grant:r "$($env:USERNAME):R"
+```
+
+Depois, no PowerShell ou Windows Terminal:
+
+```powershell
+ssh -i "$env:USERPROFILE\.ssh\oracle.key" ubuntu@IP_DA_INSTANCIA
+```
+
+</details>
+
+<details>
+<summary><b>No Linux ou macOS</b></summary>
 
 ```bash
-ssh -i sua-chave.key ubuntu@IP_DA_INSTANCIA
+chmod 600 ~/.ssh/oracle.key && ssh -i ~/.ssh/oracle.key ubuntu@IP_DA_INSTANCIA
 ```
+
+</details>
+
+Quando o prompt mudar para algo como `ubuntu@instancia:~$`, você está dentro da
+VM. **Os comandos abaixo são todos digitados aí.**
+
+**5. Instalar** (já dentro da VM):
 
 ```bash
 git clone https://github.com/brunnoaires/hshBotMusic.git && sudo bash hshBotMusic/deploy/setup.sh
@@ -494,7 +529,7 @@ Node por conta própria — se faltar, mostra o comando oficial para você confe
 rodar. É o único passo que adiciona repositório de terceiros, e essa decisão fica
 com você.
 
-**5. Credenciais e comandos:**
+**6. Credenciais e comandos:**
 
 ```bash
 sudo -u botdc cp /opt/botdc/.env.example /opt/botdc/.env && sudo -u botdc nano /opt/botdc/.env
@@ -507,7 +542,7 @@ Preencha `DISCORD_TOKEN` e `DISCORD_CLIENT_ID`, deixando `DISCORD_GUILD_ID`
 cd /opt/botdc && sudo -u botdc npm run deploy:commands && sudo systemctl start botdc
 ```
 
-**6. Acompanhar** — é aqui que aparece quem vinculou e o que está tocando:
+**7. Acompanhar** — é aqui que aparece quem vinculou e o que está tocando:
 
 ```bash
 journalctl -u botdc -f
