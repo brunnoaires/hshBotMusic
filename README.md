@@ -388,6 +388,76 @@ fonte 5x7 desenhada no próprio arquivo.
 
 ---
 
+## Rodando 24/7
+
+O bot precisa de um processo sempre no ar. A escolha de onde hospedar tem uma
+particularidade que inverte o conselho usual.
+
+### O IP importa mais que a máquina
+
+O YouTube trata IP de datacenter de forma bem mais agressiva que IP residencial.
+Em VPS e plataformas de nuvem, o yt-dlp passa a receber "Sign in to confirm you're
+not a bot" com frequência — e quando isso acontece, **nenhuma música toca para
+ninguém**. Contornar exige cookies de uma conta logada ou proxy residencial, os
+dois frágeis e de manutenção constante.
+
+Por isso, para este bot, **hospedar em casa costuma funcionar melhor que na
+nuvem** — o oposto do normal.
+
+| Opção | IP | Consumo mensal aproximado |
+| --- | --- | --- |
+| **Raspberry Pi em casa** | residencial | ~5 W, algo como R$ 3/mês de energia |
+| **Notebook velho em casa** | residencial | ~20 W, ~R$ 12/mês |
+| Mini PC / NAS que você já tem ligado | residencial | custo marginal ~zero |
+| VPS (Hetzner, Contabo, Oracle free) | datacenter | R$ 0–25/mês, mas com o risco acima |
+| PC desktop ligado direto | residencial | ~80 W, ~R$ 50/mês |
+
+Um Raspberry Pi 4 dá conta com folga: transcodificar opus a 128 kbps é barato, e o
+gargalo continua sendo a sua banda de upload, não a CPU.
+
+Se for de VPS mesmo assim, escolha um provedor cujos termos não proíbam o uso e
+esteja pronto para lidar com bloqueio do YouTube.
+
+### Instalando num Linux
+
+Node 20+ é o único pré-requisito; ffmpeg e yt-dlp vêm pelos scripts do projeto.
+
+```bash
+sudo useradd --system --create-home --home-dir /opt/botdc botdc
+sudo -u botdc git clone https://github.com/brunnoaires/hshBotMusic.git /opt/botdc
+```
+
+```bash
+cd /opt/botdc && sudo -u botdc npm install --omit=dev && sudo -u botdc npm run setup:ytdlp
+```
+
+Crie o `/opt/botdc/.env` a partir do `.env.example` e rode
+`npm run deploy:commands` uma vez. Depois:
+
+```bash
+sudo cp /opt/botdc/deploy/botdc.service /etc/systemd/system/ && sudo systemctl enable --now botdc
+```
+
+Acompanhar o log, que é onde aparece quem vinculou e o que está tocando:
+
+```bash
+journalctl -u botdc -f
+```
+
+O serviço reinicia sozinho se cair e sobe junto com a máquina. Ele mata o grupo
+inteiro de processos ao parar — sem isso, ffmpeg e yt-dlp ficariam órfãos
+segurando banda.
+
+### Manutenção
+
+A única recorrente é atualizar o yt-dlp quando o YouTube mudar a extração:
+
+```bash
+cd /opt/botdc && sudo -u botdc npm run setup:ytdlp && sudo systemctl restart botdc
+```
+
+---
+
 ## Configuração
 
 Tudo vem do `.env`. Variáveis obrigatórias ausentes são apontadas pelo nome na
@@ -488,6 +558,8 @@ src/
     nowplaying.js    cartão "Reproduzindo agora"
     progressbar.js   barra de progresso em PNG, sem dependências
     deploy.js        registro dos comandos
+deploy/
+  botdc.service      unidade systemd para rodar 24/7
 scripts/
   install-ytdlp.js   baixa o binário
   invite.js          monta o link de convite

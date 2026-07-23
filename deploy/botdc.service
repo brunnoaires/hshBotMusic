@@ -1,0 +1,44 @@
+[Unit]
+Description=botdc - bot de Discord que espelha o Spotify em canal de voz
+Documentation=https://github.com/brunnoaires/hshBotMusic
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=botdc
+Group=botdc
+WorkingDirectory=/opt/botdc
+
+# O dotenv le o .env a partir do WorkingDirectory, igual ao ambiente local.
+# Nao use EnvironmentFile aqui: o systemd interpreta aspas de forma diferente
+# e valores com caractere especial acabariam truncados sem aviso.
+ExecStart=/usr/bin/node src/index.js
+
+Restart=always
+RestartSec=10
+# Nao desiste depois de varias quedas seguidas: queda de rede prolongada
+# esgotaria o limite padrao e o bot ficaria fora do ar ate alguem perceber.
+StartLimitIntervalSec=0
+
+# O bot gera ffmpeg e yt-dlp como filhos. Matar so o node deixaria processos
+# orfaos segurando socket de voz e largura de banda.
+KillMode=control-group
+TimeoutStopSec=20
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=botdc
+
+# Endurecimento: o bot so precisa de rede e de escrever no proprio cache.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/opt/botdc/cache /opt/botdc/bin
+
+[Install]
+WantedBy=multi-user.target
