@@ -449,9 +449,45 @@ O que esperar na prática:
   conta de algumas sessões.
 - **Pede cartão de crédito** para verificação de identidade. Não cobra no Always
   Free, mas o cadastro exige.
-- **IP de datacenter.** Vale a ressalva acima: se o YouTube começar a exigir
-  verificação, o primeiro passo é `npm run setup:ytdlp`; persistindo, o caminho é
-  fornecer cookies de uma conta logada ao yt-dlp.
+- **IP de datacenter.** Vale a ressalva acima. Se aparecer *"Sign in to confirm
+  you're not a bot"*, veja [Cookies](#cookies-quando-o-youtube-exige-verificação).
+
+### Cookies: quando o YouTube exige verificação
+
+Em IP de datacenter, o YouTube frequentemente responde **"Sign in to confirm
+you're not a bot"** e nenhuma música toca. Ordem do que tentar:
+
+1. **`npm run setup:ytdlp`** — extração quebrada por mudança do YouTube se
+   resolve atualizando o binário, e é grátis.
+2. **Outro cliente do extrator** — alguns escapam do bloqueio:
+   ```bash
+   for c in android_vr tv_embedded ios web_embedded; do printf "%-14s " "$c"; ./bin/yt-dlp_linux "https://www.youtube.com/watch?v=UciTNfWDoEs" --dump-single-json --no-warnings -f bestaudio --extractor-args "youtube:player_client=$c" >/dev/null 2>&1 && echo FUNCIONA || echo bloqueado; done
+   ```
+3. **Cookies de uma conta logada** — a saída documentada pelo yt-dlp.
+
+Para os cookies, no seu computador (não na VM): instale a extensão
+*Get cookies.txt LOCALLY*, abra o YouTube **logado**, exporte o `cookies.txt`, e
+envie para a VM:
+
+```bash
+scp -i "$env:USERPROFILE\.ssh\oracle" cookies.txt ubuntu@IP_DA_VM:/tmp/
+```
+
+Na VM:
+
+```bash
+sudo mv /tmp/cookies.txt /opt/botdc/cookies.txt && sudo chown botdc:botdc /opt/botdc/cookies.txt && sudo chmod 600 /opt/botdc/cookies.txt
+```
+
+E no `.env`: `YTDLP_COOKIES=/opt/botdc/cookies.txt`
+
+> ⚠️ **Use uma conta descartável, nunca a sua principal.** O arquivo é uma
+> credencial — dá acesso à conta que o gerou — e o YouTube pode restringir contas
+> usadas assim. Os cookies também expiram, então é manutenção recorrente. O
+> `npm run check` avisa se o arquivo sumiu ou está com permissão frouxa.
+
+Se isso virar incômodo demais, o sinal é claro: **IP residencial não tem esse
+problema.** Um Raspberry Pi em casa resolve de vez.
 
 ### Passo a passo na Oracle Cloud
 

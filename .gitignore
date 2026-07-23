@@ -14,3 +14,7 @@ bin/
 # do googlevideo carregam o seu IP publico no parametro "ip", e as chaves sao um
 # retrato do que voce andou ouvindo.
 cache/
+
+# credencial: da acesso a conta do YouTube que gerou o arquivo
+cookies.txt
+*.cookies.txt

@@ -50,6 +50,26 @@ export function isInstalled() {
 // YouTube. Fora de pico, a fila esta vazia e ninguem espera.
 const semaforo = criarSemaforo(Number(process.env.YTDLP_CONCURRENCY ?? 3));
 
+/**
+ * Arquivo de cookies para o yt-dlp.
+ *
+ * Em IP residencial nao e preciso. Em VPS e nuvem, o YouTube costuma exigir
+ * "Sign in to confirm you're not a bot" — os cookies de uma conta logada sao a
+ * saida documentada pelo proprio yt-dlp.
+ *
+ * O arquivo e credencial: da acesso a conta do YouTube que o gerou. Use uma
+ * conta descartavel, nunca a principal.
+ */
+const COOKIES = process.env.YTDLP_COOKIES?.trim() || null;
+
+if (COOKIES && !existsSync(COOKIES)) {
+  throw new Error(`YTDLP_COOKIES aponta para um arquivo que nao existe: ${COOKIES}`);
+}
+
+const comCookies = (args) => (COOKIES ? ['--cookies', COOKIES, ...args] : args);
+
+export const usandoCookies = () => Boolean(COOKIES);
+
 /** Quantas chamadas rodam e quantas esperam; util com LOG_LEVEL=debug. */
 export const statusFila = () => semaforo.status();
 
@@ -64,7 +84,7 @@ export async function runJson(args) {
     throw new Error(`yt-dlp nao encontrado em ${BIN_PATH}. Rode: npm run setup:ytdlp`);
   }
 
-  return semaforo.executar(() => executar(args));
+  return semaforo.executar(() => executar(comCookies(args)));
 }
 
 function executar(args) {
@@ -79,7 +99,23 @@ function executar(args) {
     proc.on('error', reject);
     proc.on('close', (code) => {
       if (code !== 0) {
-        reject(new Error(`yt-dlp saiu com codigo ${code}: ${stderr.trim().slice(0, 400)}`));
+        const detalhe = stderr.trim().slice(0, 400);
+
+        // Erro mais comum em VPS, e a mensagem crua nao diz o que fazer no
+        // contexto deste projeto.
+        if (/confirm you.?re not a bot|Sign in to confirm/i.test(detalhe)) {
+          reject(
+            new Error(
+              'O YouTube exigiu verificacao neste IP — tipico de datacenter. ' +
+                (COOKIES
+                  ? 'Os cookies configurados podem ter expirado; gere de novo.'
+                  : 'Configure YTDLP_COOKIES, ou rode o bot de um IP residencial.'),
+            ),
+          );
+          return;
+        }
+
+        reject(new Error(`yt-dlp saiu com codigo ${code}: ${detalhe}`));
         return;
       }
       try {

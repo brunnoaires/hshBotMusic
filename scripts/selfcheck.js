@@ -31,6 +31,23 @@ check('escolhe o binario certo por plataforma e arquitetura', async () => {
   return `${casos.length} combinacoes corretas`;
 });
 
+check('cookies do yt-dlp, se configurados, estao utilizaveis', async () => {
+  const caminho = process.env.YTDLP_COOKIES?.trim();
+  if (!caminho) return 'nao configurados (normal em IP residencial)';
+
+  const { existsSync, statSync } = await import('node:fs');
+  if (!existsSync(caminho)) throw new Error(`YTDLP_COOKIES aponta para arquivo inexistente`);
+
+  const modo = statSync(caminho).mode & 0o777;
+  // O arquivo da acesso a conta do YouTube que o gerou; nao pode ficar legivel
+  // para outros usuarios da maquina.
+  if (process.platform !== 'win32' && modo & 0o077) {
+    throw new Error(`permissoes frouxas (${modo.toString(8)}); use chmod 600`);
+  }
+
+  return `ok (${caminho})`;
+});
+
 check('binarios instalados', async () => {
   const { isInstalled, BIN_PATH } = await import('../src/audio/ytdlp.js');
   const { existsSync } = await import('node:fs');
