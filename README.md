@@ -467,14 +467,22 @@ disponibilidade de máquinas ARM. Se o objetivo é servidor brasileiro, `Brazil 
 (São Paulo)` dá a menor latência de voz — mas costuma estar lotada de ARM. Vale
 verificar antes de decidir.
 
-**2. Gerar a chave SSH** — antes de criar a instância, no seu computador:
+**2. Gerar a chave SSH** — antes de criar a instância, no seu computador.
+
+O `ssh-keygen` grava dentro de um diretório que já exista, mas não o cria. Numa
+máquina que nunca usou SSH, a pasta `.ssh` não existe e ele falha com
+`No such file or directory`. Então crie primeiro:
+
+```bash
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.ssh" | Out-Null
+```
 
 ```bash
 ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\oracle" -C "botdc"
 ```
 
-No Linux ou macOS, troque o caminho por `~/.ssh/oracle`. A senha pedida é
-opcional; Enter duas vezes deixa sem.
+No Linux ou macOS: `mkdir -p ~/.ssh` e depois o mesmo comando com
+`~/.ssh/oracle`. A senha pedida é opcional; Enter duas vezes deixa sem.
 
 Isso cria `oracle` (**privada**, nunca sai da sua máquina) e `oracle.pub`
 (**pública**, é a que vai para a Oracle). Gerar por conta própria é melhor que
