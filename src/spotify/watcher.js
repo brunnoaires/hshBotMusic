@@ -4,6 +4,11 @@ import { createLogger } from '../logger.js';
 
 const log = createLogger('watcher');
 
+// Quanto a posicao pode divergir do esperado antes de ser considerada um seek.
+// Precisa acomodar o intervalo de polling, a latencia da rede e a oscilacao da
+// posicao derivada da presence — abaixo disso a faixa reiniciaria sozinha.
+const TOLERANCIA_SEEK_MS = 5_000;
+
 /**
  * Junta as duas fontes de "o que esta tocando":
  *
@@ -27,6 +32,8 @@ export class SpotifyWatcher extends EventEmitter {
   #backoffUntil = 0;
   #upcomingTimer = null;
   #upcomingDelayMs;
+  /** Ultima posicao conhecida e quando foi lida, para detectar seek. */
+  #posicao = null;
 
   current = null;
 
@@ -98,6 +105,7 @@ export class SpotifyWatcher extends EventEmitter {
     this.current = track;
 
     if (!track) {
+      this.#posicao = null;
       if (previous) {
         log.info('nada tocando no Spotify');
         this.emit('stopped');
@@ -107,6 +115,7 @@ export class SpotifyWatcher extends EventEmitter {
 
     if (!previous || previous.id !== track.id) {
       log.info(`faixa: ${track.artists} - ${track.title} (${track.source})`);
+      this.#marcarPosicao(track);
       this.emit('track', track);
       this.#scheduleUpcoming();
       return;
@@ -115,7 +124,41 @@ export class SpotifyWatcher extends EventEmitter {
     if (previous.isPlaying !== track.isPlaying) {
       log.info(track.isPlaying ? 'retomado' : 'pausado');
       this.emit(track.isPlaying ? 'resumed' : 'paused', track);
+      this.#marcarPosicao(track);
+      return;
     }
+
+    this.#detectarSeek(previous, track);
+  }
+
+  /**
+   * Mesma faixa com a posicao fora do lugar significa que voce arrastou a barra.
+   *
+   * Compara a posicao recebida com a que era esperada pelo tempo decorrido desde
+   * a ultima leitura. Sem essa comparacao nao daria para distinguir seek de
+   * simples passagem do tempo, porque as duas mudam progressMs.
+   */
+  #detectarSeek(previous, track) {
+    if (!track.isPlaying || !this.#posicao) {
+      this.#marcarPosicao(track);
+      return;
+    }
+
+    const esperado = this.#posicao.progressMs + (Date.now() - this.#posicao.em);
+    const desvio = Math.abs((track.progressMs ?? 0) - esperado);
+
+    this.#marcarPosicao(track);
+
+    // A posicao vinda da presence e derivada de timestamps e oscila um pouco; o
+    // limiar precisa ser maior que esse ruido para nao reiniciar a faixa a toa.
+    if (desvio < TOLERANCIA_SEEK_MS) return;
+
+    log.info(`seek para ${Math.round((track.progressMs ?? 0) / 1000)}s`);
+    this.emit('seek', track);
+  }
+
+  #marcarPosicao(track) {
+    this.#posicao = { progressMs: track.progressMs ?? 0, em: Date.now() };
   }
 
   /**

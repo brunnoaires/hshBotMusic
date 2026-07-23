@@ -488,6 +488,44 @@ check('watcher deduplica por id e sinaliza parada', async () => {
   return got;
 });
 
+check('watcher distingue passagem do tempo de seek', async () => {
+  const { SpotifyWatcher } = await import('../src/spotify/watcher.js');
+
+  const api = { enabled: false, currentlyPlaying: async () => null, queue: async () => [] };
+  const watcher = new SpotifyWatcher({ api, intervalMs: 60_000 });
+
+  const seeks = [];
+  const faixas = [];
+  watcher.on('seek', (t) => seeks.push(Math.round(t.progressMs / 1000)));
+  watcher.on('track', (t) => faixas.push(t.id));
+
+  const em = (progressMs) => ({
+    id: 'x1', title: 'x', artists: 'y', isPlaying: true, source: 'presence', progressMs,
+  });
+
+  watcher.onPresence(em(10_000));
+  if (faixas.length !== 1) throw new Error('deveria ter emitido a faixa');
+
+  // Avanco natural: passou ~0ms real, posicao subiu 2s. Dentro da tolerancia.
+  watcher.onPresence(em(12_000));
+  if (seeks.length) throw new Error(`avanco normal virou seek: ${seeks}`);
+
+  // Salto para frente e para tras, ambos alem da tolerancia.
+  watcher.onPresence(em(90_000));
+  watcher.onPresence(em(5_000));
+  if (seeks.join(',') !== '90,5') throw new Error(`seeks detectados: ${seeks.join(',')}`);
+
+  // Pausado nao pode gerar seek: a posicao congela e o esperado se afasta.
+  const pausado = { ...em(5_000), isPlaying: false };
+  watcher.onPresence(pausado);
+  await new Promise((r) => setTimeout(r, 30));
+  watcher.onPresence({ ...pausado });
+  if (seeks.length !== 2) throw new Error(`pausa gerou seek falso: ${seeks.join(',')}`);
+
+  watcher.stop();
+  return 'ignora avanco natural e pausa, detecta os dois saltos';
+});
+
 check('presence dispara o resolve sem esperar a API', async () => {
   const { SpotifyWatcher } = await import('../src/spotify/watcher.js');
 

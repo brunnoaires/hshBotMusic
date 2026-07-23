@@ -41,6 +41,13 @@ class GuildSession {
     this.watcher.on('paused', () => this.player.pause());
     this.watcher.on('resumed', () => this.player.resume());
     this.watcher.on('stopped', () => this.player.skip());
+
+    // Arrastou a barra no Spotify: retoca a posicao daqui. A URL do audio ja
+    // esta em cache, entao isso e so respawnar o ffmpeg noutro ponto — barato o
+    // suficiente para acompanhar de perto.
+    this.watcher.on('seek', (track) => {
+      if (this.player.current) void this.player.play(track);
+    });
   }
 
   /** Sem driver, a fila do /sr e a unica fonte. */

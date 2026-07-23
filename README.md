@@ -293,9 +293,24 @@ Podcasts e episódios são ignorados: só faixas de música.
 | Recurso | Só presence (todos) | Presence + API (`OWNER_USER_ID`) |
 | --- | --- | --- |
 | Trocar de faixa junto | sim | sim |
-| Sincronizar a posição | sim | sim |
+| Sincronizar a posição ao entrar | sim | sim |
+| Acompanhar seek (arrastar a barra) | sim | sim, mais preciso |
 | Espelhar pausa e retomada | não | sim |
 | Prefetch (troca instantânea) | não | sim |
+
+### Seek
+
+Arrastar a barra no Spotify reposiciona o áudio no Discord. A detecção compara a
+posição recebida com a esperada pelo tempo decorrido — sem essa comparação não
+haveria como distinguir "você pulou para frente" de "a música simplesmente andou",
+já que as duas mudam a posição.
+
+A tolerância é de 5 segundos, para acomodar o intervalo de polling, a latência e a
+oscilação da posição derivada da presence. Saltos menores que isso são ignorados;
+reagir a eles reiniciaria a faixa à toa.
+
+O reposicionamento é barato: a URL do áudio já está em cache, então é só respawnar
+o ffmpeg noutro ponto — nada de nova busca.
 
 ### De onde vem o áudio
 
