@@ -460,6 +460,34 @@ check('discord.js expoe os eventos e intents usados', async () => {
   return 'eventos + intents ok';
 });
 
+check('nao compensa posicao em faixa recem-comecada', async () => {
+  const { SyncPlayer } = await import('../src/audio/player.js');
+
+  // A regra vive dentro de play(), que depende de rede e conexao de voz. Testa
+  // a decisao em si, que e o que pode regredir sem ninguem notar.
+  const decidir = (progressMs, syncPosition = true, fromStart = false) => {
+    const recemComecada = (progressMs ?? 0) < 10_000;
+    return syncPosition && !fromStart && !recemComecada;
+  };
+
+  // Troca natural: o bot detecta a faixa nova com ~1s. Compensar cortaria a
+  // introducao inteira.
+  if (decidir(1_000)) throw new Error('faixa recem-comecada nao pode compensar');
+  if (decidir(4_000)) throw new Error('4s ainda e comeco de faixa');
+
+  // Alguem entrando no meio da musica: aqui a compensacao e o ponto.
+  if (!decidir(90_000)) throw new Error('entrada no meio da faixa precisa compensar');
+
+  // Faixa vinda da fila comeca do zero por definicao.
+  if (decidir(90_000, true, true)) throw new Error('fromStart nunca compensa');
+  if (decidir(90_000, false)) throw new Error('SYNC_POSITION desligado nunca compensa');
+
+  const player = new SyncPlayer({ mode: 'follow', syncPosition: true });
+  if (player.carregando) throw new Error('deveria comecar sem carregar nada');
+
+  return 'compensa so quando se entra no meio da faixa';
+});
+
 check('SyncPlayer instancia desconectado', async () => {
   const { SyncPlayer } = await import('../src/audio/player.js');
   const player = new SyncPlayer({ mode: 'follow', syncPosition: true });

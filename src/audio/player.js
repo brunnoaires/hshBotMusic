@@ -18,6 +18,11 @@ const log = createLogger('player');
 // de faixa seria confundido com o stream morrendo sozinho.
 const killedByUs = new WeakSet();
 
+// Abaixo disso, considera-se que a faixa acabou de comecar e nao se compensa a
+// posicao. Precisa cobrir a deteccao (~1s) mais o resolve sem prefetch (~3,4s),
+// com folga para maquinas mais lentas.
+const INICIO_DE_FAIXA_MS = 10_000;
+
 /**
  * Toca no Discord o que esta tocando no Spotify.
  *
@@ -186,9 +191,16 @@ export class SyncPlayer {
     this.carregando = false;
     if (!source) return;
 
-    // Soma o tempo gasto resolvendo, senao a faixa entra atrasada por esse tanto.
+    // Faixa que mal comecou veio de troca natural, nao de alguem entrando no
+    // meio dela. Compensar aqui cortaria a introducao — e perder o comeco de
+    // toda musica incomoda muito mais do que ficar alguns segundos atras do
+    // Spotify, que ninguem na call tem como perceber.
+    const recemComecada = (track.progressMs ?? 0) < INICIO_DE_FAIXA_MS;
+
     const seekMs =
-      this.syncPosition && !fromStart ? (track.progressMs ?? 0) + (Date.now() - startedAt) : 0;
+      this.syncPosition && !fromStart && !recemComecada
+        ? (track.progressMs ?? 0) + (Date.now() - startedAt)
+        : 0;
 
     this.#killFfmpeg();
 

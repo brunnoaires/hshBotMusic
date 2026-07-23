@@ -339,6 +339,16 @@ Com `SYNC_POSITION` ligado (padrão), o ffmpeg entra no mesmo ponto em que o seu
 Spotify está, **já somando o tempo gasto na busca**. Você não ouve a faixa
 atrasada — só espera menos.
 
+Isso vale para quem entra **no meio** de uma música. Numa troca natural de faixa
+a regra se inverte: como o bot leva ~4s entre detectar e resolver, compensar
+faria toda música começar já no segundo 4, cortando a introdução. Então faixa com
+menos de 10s de reprodução começa do zero, e o bot fica esses poucos segundos
+atrás do seu Spotify — diferença que ninguém na call percebe, ao contrário de
+perder o começo de cada música.
+
+Com o [prefetch](#prefetch) ligado o problema some, porque a faixa seguinte já
+está resolvida quando a troca acontece.
+
 ### Cache
 
 Resolver uma faixa custa duas chamadas ao yt-dlp: a busca e a extração da URL.
