@@ -571,6 +571,12 @@ Node por conta própria — se faltar, mostra o comando oficial para você confe
 rodar. É o único passo que adiciona repositório de terceiros, e essa decisão fica
 com você.
 
+**Não instale o Node por snap.** O snap roda confinado e se recusa a acessar
+diretório home fora de `/home`, e o usuário de serviço tem home em `/opt/botdc`.
+O erro que aparece fala de "home directories outside of /home", sem mencionar o
+Node — o script detecta esse caso e avisa, mas evite de saída usando o pacote do
+repositório NodeSource.
+
 **7. Credenciais e comandos:**
 
 ```bash

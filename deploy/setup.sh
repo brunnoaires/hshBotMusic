@@ -54,6 +54,24 @@ if [ "$MAIOR" -lt 20 ]; then
   echo "Depois rode este script de novo."
   exit 1
 fi
+# Node instalado por snap roda confinado e se recusa a operar com home fora de
+# /home — e o usuario de servico tem home em /opt. O erro que aparece nesse caso
+# fala de "home directories outside of /home", sem nenhuma mencao ao Node, e
+# custa caro descobrir a causa.
+if readlink -f "$(command -v node)" | grep -q '^/snap/'; then
+  vermelho "Este Node veio do snap, e o snap nao acessa home fora de /home."
+  echo
+  echo "Troque pelo pacote do repositorio oficial:"
+  echo
+  echo "  sudo snap remove node"
+  echo "  curl -fsSL https://deb.nodesource.com/setup_22.x -o /tmp/node.sh"
+  echo "  less /tmp/node.sh        # confira antes de executar"
+  echo "  sudo bash /tmp/node.sh && sudo apt-get install -y nodejs"
+  echo
+  echo "Depois rode este script de novo."
+  exit 1
+fi
+
 verde "Node $(node -v) — ok"
 
 # ---------------------------------------------------------------------------
