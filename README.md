@@ -503,9 +503,30 @@ Get-Content "$env:USERPROFILE\.ssh\oracle.pub"
 | Shape | `VM.Standard.A1.Flex` — 4 OCPU, 24 GB (é ARM, e é o Always Free) |
 | SSH keys | **Paste public keys** e cole a linha do `oracle.pub` |
 
-Se der **"Out of host capacity"**, é o problema clássico do ARM na Oracle. Troque
-o *availability domain*, tente em outro horário, ou use `VM.Standard.E2.1.Micro`
-(AMD, 1 GB RAM) — também Always Free e suficiente para algumas sessões.
+Se der **"Out of host capacity"**, é o problema clássico do ARM na Oracle, não erro
+de configuração. Em ordem do mais fácil:
+
+1. **Trocar o Availability Domain** — só ajuda se sua região tiver mais de um.
+   São Paulo e Vinhedo têm apenas AD-1.
+2. **Pedir menos**: 2 OCPU / 12 GB, ou 1 OCPU / 6 GB. Cabe onde 4 não cabe, segue
+   Always Free, e o bot não precisa de 4 núcleos.
+3. **Tentar de madrugada** — capacidade ARM libera com frequência surpreendente
+   fora do horário comercial.
+4. **Ir de AMD**: `VM.Standard.E2.1.Micro`, que quase sempre tem vaga. Também
+   Always Free, e você pode criar duas.
+
+Na `E2.1.Micro` são 1/8 de OCPU e 1 GB de RAM, então ajuste o `.env`:
+
+```
+MAX_SESSIONS=3
+YTDLP_CONCURRENCY=1
+```
+
+Com 1/8 de OCPU, duas chamadas simultâneas ao yt-dlp brigam pela CPU e saem mais
+lentas que uma de cada vez. Espere o resolve de uma faixa nova subir para ~6–8s;
+cache e prefetch continuam valendo, então a sequência normal de playlist segue
+instantânea. Dá para migrar para ARM depois: o `setup.sh` é o mesmo e o binário da
+arquitetura certa é baixado sozinho.
 
 **4. Nada de firewall a abrir.** O bot só faz conexões de saída; o Discord
 conecta-se a partir dele. A porta 22 já vem liberada para o SSH.
