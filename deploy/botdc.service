@@ -4,6 +4,12 @@ Documentation=https://github.com/brunnoaires/hshBotMusic
 After=network-online.target
 Wants=network-online.target
 
+# Nao desiste depois de varias quedas seguidas: uma queda de rede prolongada
+# esgotaria o limite padrao e o bot ficaria fora do ar ate alguem perceber.
+# Precisa estar em [Unit] — o systemd ignora esta chave em [Service], e avisa
+# no log com "Unknown key name", que e facil passar despercebido.
+StartLimitIntervalSec=0
+
 [Service]
 Type=simple
 User=botdc
@@ -17,9 +23,6 @@ ExecStart=/usr/bin/node src/index.js
 
 Restart=always
 RestartSec=10
-# Nao desiste depois de varias quedas seguidas: queda de rede prolongada
-# esgotaria o limite padrao e o bot ficaria fora do ar ate alguem perceber.
-StartLimitIntervalSec=0
 
 # O bot gera ffmpeg e yt-dlp como filhos. Matar so o node deixaria processos
 # orfaos segurando socket de voz e largura de banda.
