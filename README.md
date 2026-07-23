@@ -418,6 +418,41 @@ gargalo continua sendo a sua banda de upload, não a CPU.
 Se for de VPS mesmo assim, escolha um provedor cujos termos não proíbam o uso e
 esteja pronto para lidar com bloqueio do YouTube.
 
+### Hospedagem gratuita
+
+Quase toda lista de "hospedagem grátis" ignora o número que decide isto aqui:
+**franquia de tráfego de saída**. Cada sessão transmite ~128 kbps contínuos, o que
+dá **~60 MB por hora de música**. Uma pessoa ouvindo 3h por dia consome ~5 GB/mês.
+
+Isso elimina a maioria das opções antes de qualquer outra consideração:
+
+| Opção | Saída grátis | Serve? |
+| --- | --- | --- |
+| **Oracle Cloud Always Free** | **10 TB/mês** | **Sim.** Sobra folga absurda |
+| Google Cloud `e2-micro` | 1 GB/mês | Não — ~15h de música e começa a cobrar |
+| AWS / Azure free tier | 100 GB/mês, só 12 meses | Temporário |
+| Render free | — | Não — só web service, e dorme sem tráfego |
+| Replit free | — | Não — dorme; "Always On" é pago |
+| Railway / Fly.io | — | Crédito de teste, depois pago |
+
+Sobra uma resposta: **Oracle Cloud Always Free**. É VM de verdade, com root e UDP
+liberado (o Discord precisa de UDP para voz), gratuita por tempo indeterminado, e
+os 10 TB tornam o tráfego irrelevante. A unidade systemd do repositório funciona
+lá direto.
+
+O que esperar na prática:
+
+- **É ARM** (Ampere A1: 4 vCPU e 24 GB no free tier). O `setup:ytdlp` detecta a
+  arquitetura e baixa o `aarch64` — nada a configurar.
+- **Capacidade ARM vive esgotada** nas regiões populares. Tente outra região, ou
+  caia para as 2 VMs AMD `micro` (1 GB RAM cada), que também são Always Free e dão
+  conta de algumas sessões.
+- **Pede cartão de crédito** para verificação de identidade. Não cobra no Always
+  Free, mas o cadastro exige.
+- **IP de datacenter.** Vale a ressalva acima: se o YouTube começar a exigir
+  verificação, o primeiro passo é `npm run setup:ytdlp`; persistindo, o caminho é
+  fornecer cookies de uma conta logada ao yt-dlp.
+
 ### Instalando num Linux
 
 Node 20+ é o único pré-requisito; ffmpeg e yt-dlp vêm pelos scripts do projeto.

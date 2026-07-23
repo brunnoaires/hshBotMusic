@@ -6,6 +6,31 @@
 const checks = [];
 const check = (name, fn) => checks.push([name, fn]);
 
+check('escolhe o binario certo por plataforma e arquitetura', async () => {
+  const { assetPara } = await import('../src/audio/ytdlp.js');
+
+  const casos = [
+    ['win32', 'x64', 'yt-dlp_win.zip'],
+    ['darwin', 'arm64', 'yt-dlp_macos'],
+    ['linux', 'x64', 'yt-dlp_linux'],
+    // Maquinas gratuitas mais generosas sao ARM; o binario x86 nao roda la.
+    ['linux', 'arm64', 'yt-dlp_linux_aarch64'],
+    // Nao existe binario standalone para ARM 32 bits; cai no zipapp Python.
+    ['linux', 'arm', 'yt-dlp'],
+    // Arquitetura desconhecida cai no x86, que e o mais provavel.
+    ['linux', 'mips', 'yt-dlp_linux'],
+  ];
+
+  for (const [plataforma, arquitetura, esperado] of casos) {
+    const obtido = assetPara(plataforma, arquitetura);
+    if (obtido !== esperado) {
+      throw new Error(`${plataforma}/${arquitetura}: esperava ${esperado}, veio ${obtido}`);
+    }
+  }
+
+  return `${casos.length} combinacoes corretas`;
+});
+
 check('binarios instalados', async () => {
   const { isInstalled, BIN_PATH } = await import('../src/audio/ytdlp.js');
   const { existsSync } = await import('node:fs');
