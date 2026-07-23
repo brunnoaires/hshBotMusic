@@ -38,7 +38,10 @@ ProtectHome=true
 ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
-ReadWritePaths=/opt/botdc/cache /opt/botdc/bin
+# O "-" tolera o caminho ainda nao existir: o cache/ so e criado na primeira
+# gravacao, e sem isso o servico falharia no primeiro start com um erro de
+# namespace que nao diz nada sobre a causa.
+ReadWritePaths=-/opt/botdc/cache -/opt/botdc/bin
 
 [Install]
 WantedBy=multi-user.target

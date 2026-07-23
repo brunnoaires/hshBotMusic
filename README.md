@@ -453,39 +453,81 @@ O que esperar na prática:
   verificação, o primeiro passo é `npm run setup:ytdlp`; persistindo, o caminho é
   fornecer cookies de uma conta logada ao yt-dlp.
 
-### Instalando num Linux
+### Passo a passo na Oracle Cloud
 
-Node 20+ é o único pré-requisito; ffmpeg e yt-dlp vêm pelos scripts do projeto.
+**1. Criar a conta** em [cloud.oracle.com](https://cloud.oracle.com) → *Start for
+free*. Pede cartão para verificação, mas o Always Free não cobra.
+
+A **região de origem não pode ser trocada depois**, e é ela que determina a
+disponibilidade de máquinas ARM. Se o objetivo é servidor brasileiro, `Brazil East
+(São Paulo)` dá a menor latência de voz — mas costuma estar lotada de ARM. Vale
+verificar antes de decidir.
+
+**2. Criar a instância** em *Compute → Instances → Create instance*:
+
+| Campo | Valor |
+| --- | --- |
+| Image | Ubuntu 22.04 ou 24.04 |
+| Shape | `VM.Standard.A1.Flex` — 4 OCPU, 24 GB (é ARM, e é o Always Free) |
+| SSH keys | gere um par e **guarde a chave privada** |
+
+Se der **"Out of host capacity"**, é o problema clássico do ARM na Oracle. Troque
+o *availability domain*, tente em outro horário, ou use `VM.Standard.E2.1.Micro`
+(AMD, 1 GB RAM) — também Always Free e suficiente para algumas sessões.
+
+**3. Nada de firewall a abrir.** O bot só faz conexões de saída; o Discord
+conecta-se a partir dele. A porta 22 já vem liberada para o SSH.
+
+**4. Conectar e instalar:**
 
 ```bash
-sudo useradd --system --create-home --home-dir /opt/botdc botdc
-sudo -u botdc git clone https://github.com/brunnoaires/hshBotMusic.git /opt/botdc
+ssh -i sua-chave.key ubuntu@IP_DA_INSTANCIA
 ```
 
 ```bash
-cd /opt/botdc && sudo -u botdc npm install --omit=dev && sudo -u botdc npm run setup:ytdlp
+git clone https://github.com/brunnoaires/hshBotMusic.git && sudo bash hshBotMusic/deploy/setup.sh
 ```
 
-Crie o `/opt/botdc/.env` a partir do `.env.example` e rode
-`npm run deploy:commands` uma vez. Depois:
+O [setup.sh](deploy/setup.sh) cria o usuário de sistema, instala em `/opt/botdc`,
+baixa o yt-dlp da arquitetura certa e registra o serviço. Ele **não** instala o
+Node por conta própria — se faltar, mostra o comando oficial para você conferir e
+rodar. É o único passo que adiciona repositório de terceiros, e essa decisão fica
+com você.
+
+**5. Credenciais e comandos:**
 
 ```bash
-sudo cp /opt/botdc/deploy/botdc.service /etc/systemd/system/ && sudo systemctl enable --now botdc
+sudo -u botdc cp /opt/botdc/.env.example /opt/botdc/.env && sudo -u botdc nano /opt/botdc/.env
 ```
 
-Acompanhar o log, que é onde aparece quem vinculou e o que está tocando:
+Preencha `DISCORD_TOKEN` e `DISCORD_CLIENT_ID`, deixando `DISCORD_GUILD_ID`
+**vazio**. Depois:
+
+```bash
+cd /opt/botdc && sudo -u botdc npm run deploy:commands && sudo systemctl start botdc
+```
+
+**6. Acompanhar** — é aqui que aparece quem vinculou e o que está tocando:
 
 ```bash
 journalctl -u botdc -f
 ```
 
-O serviço reinicia sozinho se cair e sobe junto com a máquina. Ele mata o grupo
-inteiro de processos ao parar — sem isso, ffmpeg e yt-dlp ficariam órfãos
-segurando banda.
+O serviço reinicia sozinho se cair e sobe junto com a máquina. Ao parar, mata o
+grupo inteiro de processos — sem isso, ffmpeg e yt-dlp ficariam órfãos segurando
+banda.
 
-### Manutenção
+### Atualizando depois
 
-A única recorrente é atualizar o yt-dlp quando o YouTube mudar a extração:
+```bash
+sudo bash /opt/botdc/deploy/setup.sh
+```
+
+O script é idempotente: puxa o código novo, atualiza dependências e binários, e
+reinicia o serviço. Não toca no `.env`.
+
+A manutenção recorrente é atualizar o yt-dlp quando o YouTube mudar a extração —
+o `setup.sh` acima já faz isso, ou isoladamente:
 
 ```bash
 cd /opt/botdc && sudo -u botdc npm run setup:ytdlp && sudo systemctl restart botdc
@@ -595,6 +637,7 @@ src/
     deploy.js        registro dos comandos
 deploy/
   botdc.service      unidade systemd para rodar 24/7
+  setup.sh           instala e atualiza numa máquina Linux
 scripts/
   install-ytdlp.js   baixa o binário
   invite.js          monta o link de convite
