@@ -467,57 +467,70 @@ disponibilidade de máquinas ARM. Se o objetivo é servidor brasileiro, `Brazil 
 (São Paulo)` dá a menor latência de voz — mas costuma estar lotada de ARM. Vale
 verificar antes de decidir.
 
-**2. Criar a instância** em *Compute → Instances → Create instance*:
+**2. Gerar a chave SSH** — antes de criar a instância, no seu computador:
+
+```bash
+ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\oracle" -C "botdc"
+```
+
+No Linux ou macOS, troque o caminho por `~/.ssh/oracle`. A senha pedida é
+opcional; Enter duas vezes deixa sem.
+
+Isso cria `oracle` (**privada**, nunca sai da sua máquina) e `oracle.pub`
+(**pública**, é a que vai para a Oracle). Gerar por conta própria é melhor que
+usar o "Generate a key pair for me": a privada nunca trafega, e o arquivo já
+nasce com as permissões que o SSH exige.
+
+Para copiar a pública:
+
+```bash
+Get-Content "$env:USERPROFILE\.ssh\oracle.pub"
+```
+
+**3. Criar a instância** em *Compute → Instances → Create instance*:
 
 | Campo | Valor |
 | --- | --- |
 | Image | Ubuntu 22.04 ou 24.04 |
 | Shape | `VM.Standard.A1.Flex` — 4 OCPU, 24 GB (é ARM, e é o Always Free) |
-| SSH keys | gere um par e **guarde a chave privada** |
+| SSH keys | **Paste public keys** e cole a linha do `oracle.pub` |
 
 Se der **"Out of host capacity"**, é o problema clássico do ARM na Oracle. Troque
 o *availability domain*, tente em outro horário, ou use `VM.Standard.E2.1.Micro`
 (AMD, 1 GB RAM) — também Always Free e suficiente para algumas sessões.
 
-**3. Nada de firewall a abrir.** O bot só faz conexões de saída; o Discord
+**4. Nada de firewall a abrir.** O bot só faz conexões de saída; o Discord
 conecta-se a partir dele. A porta 22 já vem liberada para o SSH.
 
-**4. Conectar.** Você não instala Linux em lugar nenhum: o Linux é a VM alugada,
-e do seu computador você só se conecta nela por SSH. Daí em diante, tudo o que
-for digitado roda **na VM**, não na sua máquina.
-
-<details>
-<summary><b>No Windows</b> (o SSH já vem instalado; não precisa de PuTTY)</summary>
-
-Guarde a chave que a Oracle gerou em `%USERPROFILE%\.ssh\`. Antes de usar, ajuste
-as permissões — o OpenSSH recusa chave que outros usuários possam ler, e o erro
-(`UNPROTECTED PRIVATE KEY FILE`) não diz o que fazer:
-
-```powershell
-icacls "$env:USERPROFILE\.ssh\oracle.key" /inheritance:r /grant:r "$($env:USERNAME):R"
-```
-
-Depois, no PowerShell ou Windows Terminal:
-
-```powershell
-ssh -i "$env:USERPROFILE\.ssh\oracle.key" ubuntu@IP_DA_INSTANCIA
-```
-
-</details>
-
-<details>
-<summary><b>No Linux ou macOS</b></summary>
+**5. Conectar.** Você não instala Linux em lugar nenhum: o Linux é a VM alugada,
+e do seu computador você só se conecta nela por SSH. No Windows não precisa de
+PuTTY nem WSL — o SSH já vem no sistema desde o Windows 10.
 
 ```bash
-chmod 600 ~/.ssh/oracle.key && ssh -i ~/.ssh/oracle.key ubuntu@IP_DA_INSTANCIA
+ssh -i "$env:USERPROFILE\.ssh\oracle" ubuntu@IP_DA_INSTANCIA
 ```
-
-</details>
 
 Quando o prompt mudar para algo como `ubuntu@instancia:~$`, você está dentro da
 VM. **Os comandos abaixo são todos digitados aí.**
 
-**5. Instalar** (já dentro da VM):
+<details>
+<summary>Se der <code>UNPROTECTED PRIVATE KEY FILE</code></summary>
+
+Acontece com chave vinda de outro lugar, ou baixada do painel da Oracle: o SSH
+recusa chave privada que outros usuários do sistema possam ler. No Windows as
+permissões vêm herdadas da pasta, então a chave nasce aberta demais.
+
+```powershell
+icacls "$env:USERPROFILE\.ssh\oracle" /inheritance:r /grant:r "$($env:USERNAME):R"
+```
+
+No Linux ou macOS: `chmod 600 ~/.ssh/oracle`.
+
+Chave criada pelo `ssh-keygen` no passo 2 já nasce correta e não precisa disso.
+
+</details>
+
+**6. Instalar** (já dentro da VM):
 
 ```bash
 git clone https://github.com/brunnoaires/hshBotMusic.git && sudo bash hshBotMusic/deploy/setup.sh
@@ -529,7 +542,7 @@ Node por conta própria — se faltar, mostra o comando oficial para você confe
 rodar. É o único passo que adiciona repositório de terceiros, e essa decisão fica
 com você.
 
-**6. Credenciais e comandos:**
+**7. Credenciais e comandos:**
 
 ```bash
 sudo -u botdc cp /opt/botdc/.env.example /opt/botdc/.env && sudo -u botdc nano /opt/botdc/.env
@@ -542,7 +555,7 @@ Preencha `DISCORD_TOKEN` e `DISCORD_CLIENT_ID`, deixando `DISCORD_GUILD_ID`
 cd /opt/botdc && sudo -u botdc npm run deploy:commands && sudo systemctl start botdc
 ```
 
-**7. Acompanhar** — é aqui que aparece quem vinculou e o que está tocando:
+**8. Acompanhar** — é aqui que aparece quem vinculou e o que está tocando:
 
 ```bash
 journalctl -u botdc -f
