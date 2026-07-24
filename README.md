@@ -148,7 +148,7 @@ O comando `/ajuda` explica isso dentro do próprio Discord.
 | `/desvincular` | Sai do canal e para de seguir | driver 🔒 |
 | `/modo follow\|queue` | `follow` troca na hora; `queue` enfileira e toca em sequência | driver 🔒 |
 | `/limpar` | Esvazia a fila sem parar a faixa atual | driver 🔒 |
-| `/rematch` | Achou o vídeo errado? Esquece o match em cache e procura de novo | driver 🔒 |
+| `/rematch` | Achou o vídeo errado? Lista os candidatos e você escolhe num menu | driver 🔒 |
 | `/tiktok <@usuário\|parar>` | Liga o chat de uma live da TikTok à fila | driver 🔒 |
 
 🔒 = o **driver** (quem rodou `/vincular`) ou quem tem Gerenciar Servidor. Em
@@ -370,7 +370,13 @@ Só o vencedor tem a URL de áudio extraída. O ffmpeg transcodifica para ogg/op
 128 kbps, 48 kHz, estéreo — que é o que o Discord aceita direto, dispensando um
 encoder opus nativo.
 
-Confira a escolha com `/agora`; corrija com `/rematch`.
+Confira a escolha com `/agora`. Se estiver errada, `/rematch` **lista os
+candidatos num menu** para você escolher o vídeo certo, em vez de tentar adivinhar
+outro. A escolha é gravada no cache, então da próxima vez que a música tocar já
+vem certa; se a faixa já tiver passado quando você escolhe, o match fica corrigido
+para o futuro sem interromper o que está tocando. É útil justamente porque o
+ranking às vezes prefere uma re-upload "(Lyrics)" ao vídeo oficial, quando a
+duração dela bate um pouco melhor.
 
 ### Sincronização de posição
 
@@ -824,7 +830,8 @@ use `LOG_LEVEL=debug`.
   repetidas ficam em ~0.
 - **O piso é o yt-dlp**, que gasta ~1,6s por chamada e não tem modo servidor. Para
   ir abaixo só trocando a fonte de áudio.
-- **O match nem sempre é perfeito** — a escolha do vídeo é heurística.
+- **O match nem sempre é perfeito** — a escolha do vídeo é heurística; corrija com
+  `/rematch`, que lista os candidatos para você escolher.
 - **Um canal de voz por servidor**, seguindo uma pessoa por vez.
 - **Podcasts são ignorados** — só faixas de música.
 - Se o YouTube apertar o cerco na extração, o `setup:ytdlp` atualiza o binário. É a

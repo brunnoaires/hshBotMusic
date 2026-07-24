@@ -1,11 +1,14 @@
 import {
+  ActionRowBuilder,
   ChannelType,
   EmbedBuilder,
   MessageFlags,
   PermissionFlagsBits,
   SlashCommandBuilder,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
 } from 'discord.js';
-import { buscarPedido, invalidateMatch } from '../audio/resolve.js';
+import { buscarPedido, candidatosPara, fixarMatch, invalidateMatch } from '../audio/resolve.js';
 import { readSpotifyActivity } from '../spotify/presence.js';
 import { TikTokConnector } from '../tiktok/connector.js';
 import { TikTokBridge } from '../tiktok/bridge.js';
@@ -138,6 +141,21 @@ function podeAnunciarEm(interaction) {
   );
 }
 
+/**
+ * Corta uma string ao limite do Discord, que conta em code units UTF-16
+ * (.length), nao em code points. Se o corte cair no meio de um par surrogate,
+ * remove o pedaco solto — senao o Discord rejeita a resposta inteira.
+ */
+function cortar(texto, max) {
+  const s = String(texto);
+  if (s.length <= max) return s;
+
+  let corte = s.slice(0, max);
+  const ultimo = corte.charCodeAt(corte.length - 1);
+  if (ultimo >= 0xd800 && ultimo <= 0xdbff) corte = corte.slice(0, -1);
+  return corte;
+}
+
 function duracaoLegivel(ms) {
   if (!ms) return null;
   const total = Math.round(ms / 1000);
@@ -231,6 +249,50 @@ function nowPlayingEmbed(session) {
   });
 
   return embed;
+}
+
+/**
+ * Selecao do dropdown do /rematch. O usuario escolheu qual video corresponde a
+ * faixa; fixamos esse match e, se a faixa ainda estiver tocando, retocamos.
+ */
+export async function handleRematchSelect(interaction, { sessions }) {
+  const spotifyId = interaction.customId.slice('rematch:'.length);
+  const youtubeId = interaction.values[0];
+  const session = sessions.get(interaction.guildId);
+
+  if (!session) {
+    await interaction.update({ content: 'A sessão já foi encerrada.', components: [] });
+    return;
+  }
+  if (!podeControlar(interaction, session)) {
+    await interaction.reply(
+      efemero('Só quem comanda a sessão pode escolher o vídeo.'),
+    );
+    return;
+  }
+
+  // Persiste a escolha: da proxima vez que a faixa tocar, ja vem certa.
+  fixarMatch(spotifyId, youtubeId);
+
+  const atual = session.current;
+  // Se a faixa passou, nao interrompe a que esta tocando agora — o match ja
+  // ficou corrigido para o futuro.
+  if (atual?.id !== spotifyId) {
+    await interaction.update({
+      content: 'Match corrigido para a próxima vez que essa música tocar.',
+      components: [],
+    });
+    return;
+  }
+
+  await interaction.update({ content: 'Trocando…', components: [] });
+  await session.player.play({ ...atual, youtubeId });
+
+  await interaction.editReply(
+    session.player.current
+      ? `Agora tocando \`${session.player.current.youtubeTitle}\`.`
+      : 'Escolhi, mas não consegui tocar esse vídeo.',
+  );
 }
 
 export async function handleCommand(interaction, { sessions, config, onChange }) {
@@ -599,17 +661,40 @@ export async function handleCommand(interaction, { sessions, config, onChange })
         return;
       }
 
-      // Sem isso o match ruim ficaria colado na faixa para sempre — e o preco
-      // de cachear a escolha do video.
-      invalidateMatch(track.id);
-      await interaction.deferReply();
-      await session.player.play(track);
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-      await interaction.editReply(
-        session.player.current
-          ? `Agora tocando \`${session.player.current.youtubeTitle}\`.`
-          : `Procurei de novo por **${track.title}**, mas não achei nada melhor.`,
-      );
+      const candidatos = await candidatosPara(track).catch(() => []);
+      if (!candidatos.length) {
+        await interaction.editReply(`Não achei alternativas no YouTube para **${track.title}**.`);
+        return;
+      }
+
+      // O video escolhido vai no value; o id da faixa do Spotify no customId,
+      // para o handler saber o que remapear quando alguem selecionar.
+      const menu = new StringSelectMenuBuilder()
+        .setCustomId(`rematch:${track.id}`)
+        .setPlaceholder('Escolha o vídeo certo')
+        .addOptions(
+          candidatos.slice(0, 25).map((c, i) =>
+            new StringSelectMenuOptionBuilder()
+              .setLabel(cortar(c.title, 100))
+              .setDescription(
+                cortar(
+                  [c.channel, c.durationMs ? formatTime(c.durationMs) : null]
+                    .filter(Boolean)
+                    .join(' · '),
+                  100,
+                ) || 'sem detalhes',
+              )
+              .setValue(c.id)
+              .setDefault(i === 0),
+          ),
+        );
+
+      await interaction.editReply({
+        content: `Alternativas para **${track.artists} — ${track.title}**:`,
+        components: [new ActionRowBuilder().addComponents(menu)],
+      });
       return;
     }
 

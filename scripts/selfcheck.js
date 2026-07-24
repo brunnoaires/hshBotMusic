@@ -94,6 +94,68 @@ check('/ajuda lista todos os comandos e cabe nos limites do Discord', async () =
   return `${commands.length} comandos, ${texto.length} caracteres`;
 });
 
+check('rematch monta um dropdown valido a partir dos candidatos', async () => {
+  const {
+    ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
+  } = await import('discord.js');
+
+  // Mesma montagem do comando, com candidatos de borda: titulo gigante, canal
+  // vazio, sem duracao, e mais que o limite de 25.
+  const candidatos = Array.from({ length: 30 }, (_, i) => ({
+    id: `vid${i}`.padEnd(11, '0').slice(0, 11),
+    title: i === 0 ? 'x'.repeat(250) : `Musica ${i} (Official Video)`,
+    channel: i === 1 ? '' : `Canal ${i} - Topic`,
+    durationMs: i === 2 ? null : 213_000,
+  }));
+
+  // Titulo so de pares surrogate: cortar por code unit deixaria surrogate solto.
+  candidatos[3].title = '🎵'.repeat(120);
+
+  const fmt = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
+  const cortar = (texto, max) => {
+    const s = String(texto);
+    if (s.length <= max) return s;
+    let corte = s.slice(0, max);
+    const u = corte.charCodeAt(corte.length - 1);
+    if (u >= 0xd800 && u <= 0xdbff) corte = corte.slice(0, -1);
+    return corte;
+  };
+
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId('rematch:spotify123')
+    .setPlaceholder('Escolha o video certo')
+    .addOptions(
+      candidatos.slice(0, 25).map((c, i) =>
+        new StringSelectMenuOptionBuilder()
+          .setLabel(cortar(c.title, 100))
+          .setDescription(
+            cortar([c.channel, c.durationMs ? fmt(c.durationMs) : null].filter(Boolean).join(' · '), 100) ||
+              'sem detalhes',
+          )
+          .setValue(c.id)
+          .setDefault(i === 0),
+      ),
+    );
+
+  const json = new ActionRowBuilder().addComponents(menu).toJSON();
+  const options = json.components[0].options;
+
+  if (options.length !== 25) throw new Error(`esperava 25 opcoes (teto), veio ${options.length}`);
+  if (json.components[0].custom_id !== 'rematch:spotify123') throw new Error('customId perdido');
+
+  for (const o of options) {
+    if (!o.label || o.label.length > 100) throw new Error(`label invalida: ${o.label?.length}`);
+    if (!o.value || o.value.length > 100) throw new Error('value invalida');
+    if (o.description && o.description.length > 100) throw new Error('description passou de 100');
+    // Surrogate solto no fim significa que um par foi partido no corte.
+    const ultimo = o.label.charCodeAt(o.label.length - 1);
+    if (ultimo >= 0xd800 && ultimo <= 0xdbff) throw new Error('label terminou em surrogate solto');
+  }
+  if (options.filter((o) => o.default).length !== 1) throw new Error('deveria haver 1 padrao');
+
+  return 'trunca sem partir surrogate, tolera campos vazios, respeita o teto de 25';
+});
+
 check('barra de progresso sai como PNG valido', async () => {
   const { renderizarBarra, formatarTempo } = await import('../src/discord/progressbar.js');
   const { inflateSync } = await import('node:zlib');

@@ -39,7 +39,8 @@ function scoreCandidate(entry, track, query) {
 }
 
 /** Busca rasa e barata: so ranqueia candidatos, sem extrair formato de nenhum. */
-async function searchYouTube(track, query) {
+/** Todos os candidatos da busca, ja ranqueados (melhor primeiro). */
+async function rankearCandidatos(track, query) {
   const search = await runJson([
     `ytsearch5:${query}`,
     '--dump-single-json',
@@ -50,15 +51,43 @@ async function searchYouTube(track, query) {
   const entries = (search?.entries ?? []).filter((e) => e?.id);
   if (!entries.length) {
     log.warn(`nenhum resultado no YouTube para "${query}"`);
-    return null;
+    return [];
   }
 
-  const ranked = entries
+  return entries
     .map((entry) => ({ entry, score: scoreCandidate(entry, track, query) }))
-    .sort((a, b) => b.score - a.score)[0];
+    .sort((a, b) => b.score - a.score);
+}
 
-  log.debug(`escolhido "${ranked.entry.title}" (score ${ranked.score.toFixed(0)}) para "${query}"`);
-  return ranked.entry;
+async function searchYouTube(track, query) {
+  const ranked = await rankearCandidatos(track, query);
+  if (!ranked.length) return null;
+
+  const melhor = ranked[0];
+  log.debug(`escolhido "${melhor.entry.title}" (score ${melhor.score.toFixed(0)}) para "${query}"`);
+  return melhor.entry;
+}
+
+/**
+ * Lista os candidatos para uma faixa, para o usuario escolher a mao (/rematch).
+ * @returns {Promise<Array<{id, title, channel, durationMs, score}>>}
+ */
+export async function candidatosPara(track) {
+  await resolveCache.ready();
+  const query = `${track.artists} - ${track.title}`;
+
+  return (await rankearCandidatos(track, query)).map(({ entry, score }) => ({
+    id: entry.id,
+    title: entry.title ?? entry.id,
+    channel: entry.channel ?? entry.uploader ?? '',
+    durationMs: entry.duration ? Math.round(entry.duration * 1000) : null,
+    score,
+  }));
+}
+
+/** Fixa manualmente qual video corresponde a uma faixa do Spotify. */
+export function fixarMatch(spotifyId, youtubeId) {
+  if (spotifyId) resolveCache.set(matchKey(spotifyId), youtubeId);
 }
 
 /** Vencimento embutido na propria URL assinada do googlevideo. */

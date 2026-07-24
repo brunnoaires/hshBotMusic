@@ -1,4 +1,4 @@
-import { Client, Events, GatewayIntentBits } from 'discord.js';
+import { Client, Events, GatewayIntentBits, MessageFlags } from 'discord.js';
 import { config } from './config.js';
 import { createLogger } from './logger.js';
 import { SpotifyApi } from './spotify/api.js';
@@ -6,7 +6,7 @@ import { readSpotifyActivity } from './spotify/presence.js';
 import { SessionManager, atualizarStatus } from './session.js';
 import { anunciar } from './discord/nowplaying.js';
 import { resolveCache } from './audio/cache.js';
-import { handleCommand } from './discord/commands.js';
+import { handleCommand, handleRematchSelect } from './discord/commands.js';
 
 const log = createLogger('bot');
 
@@ -84,17 +84,24 @@ client.on(Events.GuildDelete, (guild) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-
   try {
-    await handleCommand(interaction, { sessions, config, onChange });
+    if (interaction.isChatInputCommand()) {
+      await handleCommand(interaction, { sessions, config, onChange });
+    } else if (interaction.isStringSelectMenu() && interaction.customId.startsWith('rematch:')) {
+      await handleRematchSelect(interaction, { sessions });
+      onChange();
+    }
   } catch (err) {
-    log.error(`comando /${interaction.commandName} falhou:`, err);
-    const message = { content: 'Deu ruim ao executar esse comando.' };
+    const rotulo = interaction.isChatInputCommand()
+      ? `/${interaction.commandName}`
+      : interaction.customId;
+    log.error(`interacao ${rotulo} falhou:`, err);
+
+    const message = { content: 'Deu ruim ao executar isso.' };
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply(message).catch(() => {});
     } else {
-      await interaction.reply(message).catch(() => {});
+      await interaction.reply({ ...message, flags: MessageFlags.Ephemeral }).catch(() => {});
     }
   }
 });
