@@ -144,10 +144,16 @@ export class SpotifyApi {
    * Usado pelo /sr para identificar a musica antes de buscar o audio no YouTube:
    * nome e artista corretos e, sobretudo, a duracao exata para ranquear. Nao toca
    * nada — o Spotify nao entrega audio. Retorna null se nao achar ou falhar.
+   *
+   * Usa limit=8, nao 1: com limit=1 o Spotify aplica um ranking mais cru e
+   * "die for you joji" volta "Slow Dancing in the Dark" (a mais popular do Joji).
+   * Com o limite maior o ranking correto entra e o item[0] ja acerta — inclusive
+   * com erro de digitacao ("gorilaz fill god" -> Gorillaz), que a busca fuzzy do
+   * proprio Spotify resolve melhor do que qualquer casamento de palavra nosso.
    */
   async searchTrack(texto) {
     try {
-      const params = new URLSearchParams({ q: texto, type: 'track', limit: '1' });
+      const params = new URLSearchParams({ q: texto, type: 'track', limit: '8' });
       const res = await fetch(`${API_BASE}/search?${params}`, {
         headers: { authorization: `Bearer ${await this.#token()}` },
       });
@@ -156,8 +162,8 @@ export class SpotifyApi {
         return null;
       }
 
-      const item = (await res.json())?.tracks?.items?.[0];
-      return item?.id ? normalizeItem(item) : null;
+      const item = (await res.json())?.tracks?.items?.find((i) => i?.id);
+      return item ? normalizeItem(item) : null;
     } catch (err) {
       log.debug(`busca no Spotify indisponivel: ${err.message}`);
       return null;
