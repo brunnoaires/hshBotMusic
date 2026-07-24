@@ -295,7 +295,7 @@ export async function handleRematchSelect(interaction, { sessions }) {
   );
 }
 
-export async function handleCommand(interaction, { sessions, config, onChange }) {
+export async function handleCommand(interaction, { sessions, config, onChange, ownerApi }) {
   if (!interaction.inGuild()) {
     await interaction.reply(efemero('Esses comandos só funcionam dentro de um servidor.'));
     return;
@@ -348,7 +348,13 @@ export async function handleCommand(interaction, { sessions, config, onChange })
         return;
       }
 
-      const bridge = new TikTokBridge({ connector, session, config: config.tiktok });
+      const bridge = new TikTokBridge({
+        connector,
+        session,
+        config: config.tiktok,
+        // Pedidos do chat tambem identificam pelo Spotify quando disponivel.
+        resolver: (texto) => buscarPedido(texto, { spotifyApi: ownerApi }),
+      });
       bridge.attach();
       session.tiktok = { connector, bridge };
 
@@ -403,7 +409,8 @@ export async function handleCommand(interaction, { sessions, config, onChange })
         await interaction.deferReply();
       }
 
-      const track = await buscarPedido(pedido);
+      // Identifica pelo Spotify quando disponivel; o audio vem do YouTube.
+      const track = await buscarPedido(pedido, { spotifyApi: ownerApi });
       if (!track) {
         await interaction.editReply(`Não achei nada para **${pedido}**.`);
         return;

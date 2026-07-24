@@ -137,4 +137,30 @@ export class SpotifyApi {
       return [];
     }
   }
+
+  /**
+   * Procura uma faixa no catalogo do Spotify e devolve os metadados canonicos.
+   *
+   * Usado pelo /sr para identificar a musica antes de buscar o audio no YouTube:
+   * nome e artista corretos e, sobretudo, a duracao exata para ranquear. Nao toca
+   * nada — o Spotify nao entrega audio. Retorna null se nao achar ou falhar.
+   */
+  async searchTrack(texto) {
+    try {
+      const params = new URLSearchParams({ q: texto, type: 'track', limit: '1' });
+      const res = await fetch(`${API_BASE}/search?${params}`, {
+        headers: { authorization: `Bearer ${await this.#token()}` },
+      });
+      if (!res.ok) {
+        log.debug(`busca no Spotify falhou (${res.status})`);
+        return null;
+      }
+
+      const item = (await res.json())?.tracks?.items?.[0];
+      return item?.id ? normalizeItem(item) : null;
+    } catch (err) {
+      log.debug(`busca no Spotify indisponivel: ${err.message}`);
+      return null;
+    }
+  }
 }

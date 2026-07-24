@@ -86,7 +86,7 @@ client.on(Events.GuildDelete, (guild) => {
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) {
-      await handleCommand(interaction, { sessions, config, onChange });
+      await handleCommand(interaction, { sessions, config, onChange, ownerApi });
     } else if (interaction.isStringSelectMenu() && interaction.customId.startsWith('rematch:')) {
       await handleRematchSelect(interaction, { sessions });
       onChange();

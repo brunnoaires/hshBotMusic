@@ -94,6 +94,49 @@ check('/ajuda lista todos os comandos e cabe nos limites do Discord', async () =
   return `${commands.length} comandos, ${texto.length} caracteres`;
 });
 
+check('/sr identifica pelo Spotify e cai para o YouTube', async () => {
+  const { buscarPedido } = await import('../src/audio/resolve.js');
+  const { resolveCache } = await import('../src/audio/cache.js');
+
+  // Link nunca deve consultar o Spotify — vai direto pro YouTube. Interceptamos
+  // searchTrack para provar isso sem tocar na rede do yt-dlp (o link falha rapido
+  // e nao importa; o que importa e o Spotify NAO ter sido chamado).
+  let consultouSpotify = 0;
+  const spotifyApi = {
+    enabled: true,
+    async searchTrack(q) {
+      consultouSpotify++;
+      // "achado" so para uma query especifica; senao devolve null (fallback).
+      if (/gorillaz/i.test(q)) {
+        return {
+          id: 'sp_xyz', title: 'Feel Good Inc', artists: 'Gorillaz',
+          album: 'Demon Days', durationMs: 222000, url: 'u', artwork: 'c',
+        };
+      }
+      return null;
+    },
+  };
+
+  const achado = await buscarPedido('gorillaz feel good', { spotifyApi });
+  if (achado?.id !== 'sp_xyz') throw new Error('nao usou o id do Spotify');
+  if (achado.youtubeId) throw new Error('faixa do Spotify nao pode vir com youtubeId fixado');
+  if (achado.durationMs !== 222000) throw new Error('perdeu a duracao de referencia');
+  if (achado.artists !== 'Gorillaz') throw new Error('nao adotou o artista canonico');
+
+  // Cacheia por texto: a segunda chamada nao consulta o Spotify de novo.
+  const antes = consultouSpotify;
+  await buscarPedido('gorillaz feel good', { spotifyApi });
+  if (consultouSpotify !== antes) throw new Error('repeticao deveria vir do cache, sem novo Spotify');
+
+  // Link: nao pode consultar o Spotify.
+  const spDoLink = consultouSpotify;
+  await buscarPedido('https://www.youtube.com/watch?v=abc', { spotifyApi }).catch(() => {});
+  if (consultouSpotify !== spDoLink) throw new Error('link nao pode passar pelo Spotify');
+
+  resolveCache.clear();
+  return 'Spotify identifica, cacheia por texto, link vai direto';
+});
+
 check('candidatos do rematch filtram por nome e duracao', async () => {
   // Exercita o import e a montagem; a rede fica de fora via um resolve fake.
   // Reproduz a mesma logica de ehVersaoDaMusica/duracaoPlausivel para garantir

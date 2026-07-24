@@ -168,6 +168,15 @@ Não precisa vincular nada para usar o bot. O `/sr` pede música direto:
 /sr https://www.youtube.com/watch?v=...
 ```
 
+**Como o `/sr` encontra a música:** se a Web API do Spotify estiver configurada
+(veja [Spotify](#3-spotify--opcional)), o texto passa primeiro pela busca do
+**catálogo do Spotify**, que corrige o nome e o artista e — o que mais importa —
+dá a duração exata para ranquear o YouTube. Só então o áudio é buscado no YouTube
+(o Spotify não entrega áudio). Assim `/sr gorilaz fill god` vira "Gorillaz - Feel
+Good Inc" e acha o vídeo certo. Sem Spotify, ou se ele não achar a música, o `/sr`
+busca direto no YouTube com o texto que você digitou. Links do YouTube vão sempre
+direto, sem passar pelo Spotify.
+
 Se o bot não estiver em nenhum canal, o `/sr` já o traz para o seu e começa a
 tocar. A partir daí a fila é coletiva: **qualquer pessoa pede, e os controles
 ficam abertos a todos** — não há driver a proteger, porque não há Spotify de

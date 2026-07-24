@@ -202,27 +202,60 @@ function melhorMiniatura(entrada) {
 /**
  * Pedido manual do /sr: texto de busca ou link direto vira uma faixa tocavel.
  *
- * Diferente do fluxo do Spotify, aqui nao ha duracao de referencia para
- * ranquear — a pessoa digitou o que queria, entao a relevancia do proprio
- * YouTube e o melhor criterio. Uma chamada so, sem a passada de ranking.
+ * Com o Spotify disponivel, ele identifica a musica primeiro — nome, artista e,
+ * o que mais importa, a duracao exata para ranquear o YouTube. So entao o audio
+ * e buscado no YouTube (o Spotify nao entrega audio). Sem Spotify, ou se ele nao
+ * achar, cai direto para a busca no YouTube.
  *
+ * @param {object} opcoes
+ * @param {import('../spotify/api.js').SpotifyApi} [opcoes.spotifyApi]
  * @returns {Promise<object|null>} faixa no formato que o player espera.
  */
-export async function buscarPedido(texto) {
+export async function buscarPedido(texto, { spotifyApi = null } = {}) {
   await resolveCache.ready();
 
   const ehLink = /^https?:\/\//i.test(texto);
 
-  // Guarda a faixa inteira, nao so o id: guardando o id ainda seria preciso
-  // outra chamada ao yt-dlp para os metadados, e a repeticao nao ganharia nada.
   if (!ehLink) {
+    // Guarda a faixa inteira, nao so o id: guardando o id ainda seria preciso
+    // outra chamada para os metadados, e a repeticao nao ganharia nada.
     const cacheada = resolveCache.get(buscaKey(texto));
     if (cacheada) {
       log.debug(`pedido "${texto}" veio do cache`);
       return { ...cacheada };
     }
+
+    // Spotify identifica a musica; o audio ainda vem do YouTube via resolveAudio,
+    // que recebe a faixa SEM youtubeId e faz a busca com duracao de referencia,
+    // ranking e fallback entre candidatos.
+    if (spotifyApi?.enabled) {
+      const sp = await spotifyApi.searchTrack(texto);
+      if (sp) {
+        const faixa = {
+          id: sp.id,
+          title: sp.title,
+          artists: sp.artists,
+          album: sp.album,
+          url: sp.url,
+          artwork: sp.artwork,
+          durationMs: sp.durationMs,
+          progressMs: 0,
+          isPlaying: true,
+          source: 'pedido',
+        };
+        resolveCache.set(buscaKey(texto), faixa);
+        log.debug(`"${texto}" -> Spotify: ${faixa.artists} - ${faixa.title}`);
+        return faixa;
+      }
+      log.debug(`"${texto}" nao achado no Spotify; caindo para o YouTube`);
+    }
   }
 
+  return buscarNoYouTube(texto, ehLink);
+}
+
+/** Busca (ou extrai um link) direto no YouTube e monta a faixa. */
+async function buscarNoYouTube(texto, ehLink) {
   let info;
   try {
     info = await runJson([
