@@ -166,6 +166,7 @@ Não precisa vincular nada para usar o bot. O `/sr` pede música direto:
 ```
 /sr racionais mcs negro drama
 /sr https://www.youtube.com/watch?v=...
+/sr https://open.spotify.com/track/...
 ```
 
 **Como o `/sr` encontra a música:** se a Web API do Spotify estiver configurada
@@ -176,6 +177,12 @@ dá a duração exata para ranquear o YouTube. Só então o áudio é buscado no
 Good Inc" e acha o vídeo certo. Sem Spotify, ou se ele não achar a música, o `/sr`
 busca direto no YouTube com o texto que você digitou. Links do YouTube vão sempre
 direto, sem passar pelo Spotify.
+
+**Link do Spotify** (`open.spotify.com/track/...`, com ou sem `/intl-xx/`, ou a
+forma `spotify:track:...`) também funciona: o bot pega os metadados exatos daquela
+faixa pelo id e busca o áudio no YouTube. Precisa da Web API configurada — sem
+ela, o link não tem como ser identificado (o Spotify não entrega o áudio, então
+não adianta tentar baixá-lo direto).
 
 Se o bot não estiver em nenhum canal, o `/sr` já o traz para o seu e começa a
 tocar. A partir daí a fila é coletiva: **qualquer pessoa pede, e os controles

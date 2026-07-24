@@ -169,4 +169,26 @@ export class SpotifyApi {
       return null;
     }
   }
+
+  /**
+   * Faixa por id — usado quando o /sr recebe um link do Spotify. Metadados
+   * canonicos direto, sem busca; o audio ainda vem do YouTube.
+   */
+  async getTrack(id) {
+    try {
+      const res = await fetch(`${API_BASE}/tracks/${id}`, {
+        headers: { authorization: `Bearer ${await this.#token()}` },
+      });
+      if (!res.ok) {
+        log.debug(`faixa ${id} indisponivel no Spotify (${res.status})`);
+        return null;
+      }
+
+      const item = await res.json();
+      return item?.id ? normalizeItem(item) : null;
+    } catch (err) {
+      log.debug(`getTrack falhou: ${err.message}`);
+      return null;
+    }
+  }
 }

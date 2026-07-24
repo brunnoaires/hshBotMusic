@@ -128,13 +128,53 @@ check('/sr identifica pelo Spotify e cai para o YouTube', async () => {
   await buscarPedido('gorillaz feel good', { spotifyApi });
   if (consultouSpotify !== antes) throw new Error('repeticao deveria vir do cache, sem novo Spotify');
 
-  // Link: nao pode consultar o Spotify.
+  // Link do YouTube: nao pode consultar a BUSCA do Spotify.
   const spDoLink = consultouSpotify;
   await buscarPedido('https://www.youtube.com/watch?v=abc', { spotifyApi }).catch(() => {});
-  if (consultouSpotify !== spDoLink) throw new Error('link nao pode passar pelo Spotify');
+  if (consultouSpotify !== spDoLink) throw new Error('link do YouTube nao pode passar pela busca');
 
   resolveCache.clear();
-  return 'Spotify identifica, cacheia por texto, link vai direto';
+  return 'Spotify identifica, cacheia por texto, link do YouTube vai direto';
+});
+
+check('/sr aceita link do Spotify e resolve pelo id', async () => {
+  const { buscarPedido } = await import('../src/audio/resolve.js');
+  const { resolveCache } = await import('../src/audio/cache.js');
+
+  let getTrackCom = null;
+  const spotifyApi = {
+    enabled: true,
+    async searchTrack() {
+      throw new Error('link nao pode cair na busca por texto');
+    },
+    async getTrack(id) {
+      getTrackCom = id;
+      return {
+        id, title: 'The Killing Moon', artists: 'Echo & the Bunnymen',
+        album: 'Ocean Rain', durationMs: 348_000, url: 'u', artwork: 'c',
+      };
+    },
+  };
+
+  // Os tres formatos de link viram a mesma faixa, pelo id, sem youtubeId fixado.
+  for (const link of [
+    'https://open.spotify.com/track/ABC123',
+    'https://open.spotify.com/intl-pt/track/ABC123?si=x',
+    'spotify:track:ABC123',
+  ]) {
+    getTrackCom = null;
+    const t = await buscarPedido(link, { spotifyApi });
+    if (getTrackCom !== 'ABC123') throw new Error(`nao extraiu o id de ${link}`);
+    if (t?.title !== 'The Killing Moon') throw new Error('nao usou os metadados do Spotify');
+    if (t.youtubeId) throw new Error('faixa de link do Spotify nao pode vir com youtubeId');
+  }
+
+  // Sem Web API, link do Spotify nao tem como ser identificado.
+  const semApi = await buscarPedido('https://open.spotify.com/track/ABC123', {});
+  if (semApi !== null) throw new Error('sem API, link do Spotify deveria devolver null');
+
+  resolveCache.clear();
+  return 'tres formatos de link, pelo id, e null sem API';
 });
 
 check('candidatos do rematch filtram por nome e duracao', async () => {

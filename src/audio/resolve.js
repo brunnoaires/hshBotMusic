@@ -214,6 +214,23 @@ function melhorMiniatura(entrada) {
 export async function buscarPedido(texto, { spotifyApi = null } = {}) {
   await resolveCache.ready();
 
+  // Link do Spotify: pega os metadados canonicos pelo id e resolve o audio no
+  // YouTube. Sem isso, o link cairia no yt-dlp e falharia com erro de DRM.
+  const spotifyId = idDeLinkSpotify(texto);
+  if (spotifyId) {
+    if (!spotifyApi?.enabled) {
+      log.warn('link do Spotify recebido, mas a Web API nao esta configurada');
+      return null;
+    }
+    const sp = await spotifyApi.getTrack(spotifyId);
+    if (!sp) {
+      log.warn(`faixa ${spotifyId} nao encontrada no Spotify`);
+      return null;
+    }
+    log.debug(`link do Spotify -> ${sp.artists} - ${sp.title}`);
+    return faixaDoSpotify(sp);
+  }
+
   const ehLink = /^https?:\/\//i.test(texto);
 
   if (!ehLink) {
@@ -231,18 +248,7 @@ export async function buscarPedido(texto, { spotifyApi = null } = {}) {
     if (spotifyApi?.enabled) {
       const sp = await spotifyApi.searchTrack(texto);
       if (sp) {
-        const faixa = {
-          id: sp.id,
-          title: sp.title,
-          artists: sp.artists,
-          album: sp.album,
-          url: sp.url,
-          artwork: sp.artwork,
-          durationMs: sp.durationMs,
-          progressMs: 0,
-          isPlaying: true,
-          source: 'pedido',
-        };
+        const faixa = faixaDoSpotify(sp);
         resolveCache.set(buscaKey(texto), faixa);
         log.debug(`"${texto}" -> Spotify: ${faixa.artists} - ${faixa.title}`);
         return faixa;
@@ -252,6 +258,33 @@ export async function buscarPedido(texto, { spotifyApi = null } = {}) {
   }
 
   return buscarNoYouTube(texto, ehLink);
+}
+
+/** Id da faixa em open.spotify.com/track/ID, /intl-xx/track/ID ou spotify:track:ID. */
+function idDeLinkSpotify(texto) {
+  const m = String(texto).match(
+    /(?:open\.spotify\.com\/(?:intl-[a-z]+\/)?track\/|spotify:track:)([A-Za-z0-9]+)/i,
+  );
+  return m ? m[1] : null;
+}
+
+/**
+ * Faixa do Spotify no formato do player, SEM youtubeId: assim o resolveAudio faz
+ * a busca completa no YouTube (duracao de referencia, ranking, fallback).
+ */
+function faixaDoSpotify(sp) {
+  return {
+    id: sp.id,
+    title: sp.title,
+    artists: sp.artists,
+    album: sp.album,
+    url: sp.url,
+    artwork: sp.artwork,
+    durationMs: sp.durationMs,
+    progressMs: 0,
+    isPlaying: true,
+    source: 'pedido',
+  };
 }
 
 /** Busca (ou extrai um link) direto no YouTube e monta a faixa. */
