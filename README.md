@@ -366,9 +366,13 @@ ranking escolhe um:
   nightcore, sped up, 8d), mas só se a faixa original não tiver esses termos no
   nome — quem ouve uma gravação ao vivo de verdade não é penalizado
 
-Só o vencedor tem a URL de áudio extraída. O ffmpeg transcodifica para ogg/opus a
-128 kbps, 48 kHz, estéreo — que é o que o Discord aceita direto, dispensando um
-encoder opus nativo.
+O melhor candidato tem a URL de áudio extraída; se ele **falhar na extração**, o
+bot cai para o próximo da lista. Alguns vídeos existem e são públicos mas recusam
+a extração pela API (upload de gravadora, bloqueio específico) — nesse caso quase
+sempre há outro upload da mesma música que toca, e o bot acha sozinho, sem você
+perceber. O que efetivamente tocou é o que vai para o cache, não o primeiro
+tentado. O ffmpeg transcodifica para ogg/opus a 128 kbps, 48 kHz, estéreo — que é
+o que o Discord aceita direto, dispensando um encoder opus nativo.
 
 Confira a escolha com `/agora`. Se estiver errada, `/rematch` **lista os
 candidatos num menu** para você escolher o vídeo certo, em vez de tentar adivinhar

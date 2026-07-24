@@ -104,15 +104,6 @@ function duracaoPlausivel(entry, trackMs) {
   return seg <= 900; // sem referencia: corta o que passa de 15 min
 }
 
-async function searchYouTube(track, query) {
-  const ranked = await rankearCandidatos(track, query);
-  if (!ranked.length) return null;
-
-  const melhor = ranked[0];
-  log.debug(`escolhido "${melhor.entry.title}" (score ${melhor.score.toFixed(0)}) para "${query}"`);
-  return melhor.entry;
-}
-
 /**
  * Lista os candidatos para uma faixa, para o usuario escolher a mao (/rematch).
  *
@@ -328,15 +319,26 @@ export async function resolveAudio(track) {
     invalidateMatch(track.id);
   }
 
-  const best = await searchYouTube(track, query);
-  if (!best) return null;
+  // Alguns videos existem e sao publicos mas recusam a extracao pela API
+  // (upload de gravadora, bloqueio especifico). Em vez de desistir no melhor
+  // candidato, percorre os demais ate um tocar — quase sempre ha outro upload
+  // da mesma musica que funciona. Cacheia o que REALMENTE tocou, nao o 1o.
+  const candidatos = await rankearCandidatos(track, query);
+  if (!candidatos.length) return null;
 
-  const source = await streamFor(best.id);
-  if (!source) {
-    log.warn(`sem URL de audio utilizavel para "${best.title}"`);
-    return null;
+  for (const { entry } of candidatos) {
+    const source = await streamFor(entry.id).catch((err) => {
+      log.debug(`extracao falhou para ${entry.id}: ${err.message}`);
+      return null;
+    });
+
+    if (source) {
+      if (track.id) resolveCache.set(matchKey(track.id), entry.id);
+      return source;
+    }
+    log.debug(`"${entry.title}" nao extraiu; tentando o proximo candidato`);
   }
 
-  if (track.id) resolveCache.set(matchKey(track.id), best.id);
-  return source;
+  log.warn(`nenhum candidato tocavel para "${query}"`);
+  return null;
 }
