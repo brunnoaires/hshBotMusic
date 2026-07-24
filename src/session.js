@@ -36,6 +36,9 @@ class GuildSession {
     /** Pausado por /pausar. Impede o Spotify de retomar por conta propria. */
     this.pausadoPorComando = false;
 
+    /** Ponte com o chat da TikTok, quando /tiktok esta ativo. */
+    this.tiktok = null;
+
     this.player = criarPlayer({ mode: config.defaultMode, syncPosition: config.syncPosition });
     this.watcher = new SpotifyWatcher({ api, intervalMs: config.pollIntervalMs });
 
@@ -80,25 +83,57 @@ class GuildSession {
    * o modo follow, que interromperia a faixa atual. Pedido nunca corta o que ja
    * esta tocando — quem pediu antes ouve inteiro.
    */
-  pedir(track) {
+  pedir(track, { prioridade = false } = {}) {
     // Checar tambem `carregando`: dois /sr seguidos veriam `current` ainda nulo
     // durante a resolucao do primeiro, e o segundo cortaria o primeiro.
     if (this.player.current || this.player.carregando) {
-      this.player.queue.push(track);
-      return { posicao: this.player.queue.length, tocandoAgora: false };
+      // Prioridade (presente da TikTok) entra na frente, mas nunca corta o que
+      // ja esta tocando — quem esta ouvindo agora nao perde a faixa.
+      if (prioridade) this.player.queue.unshift(track);
+      else this.player.queue.push(track);
+
+      const posicao = prioridade ? 1 : this.player.queue.length;
+      return { posicao, tocandoAgora: false };
     }
 
     void this.player.play(track, { fromStart: true });
     return { posicao: 0, tocandoAgora: true };
   }
 
+  /** Quantos pedidos de um usuario (TikTok) estao na fila ou tocando agora. */
+  pedidosDe(userId) {
+    const naFila = this.player.queue.filter((t) => t.requestedById === userId).length;
+    const tocando = this.player.current?.requestedById === userId ? 1 : 0;
+    return naFila + tocando;
+  }
+
+  /**
+   * Move o pedido mais antigo de um usuario para a frente da fila.
+   * @returns {boolean} se havia um pedido dele para priorizar.
+   */
+  priorizarPedidoDe(userId) {
+    const idx = this.player.queue.findIndex((t) => t.requestedById === userId);
+    if (idx <= 0) return idx === 0; // ja esta na frente, ou nao existe
+    const [track] = this.player.queue.splice(idx, 1);
+    this.player.queue.unshift(track);
+    return true;
+  }
+
   stop() {
     this.watcher.stop();
     this.player.leave();
+    this.pararTikTok();
 
     // Cartao de "reproduzindo agora" so faz sentido enquanto a sessao existe.
     void this.announceMessage?.delete?.().catch(() => {});
     this.announceMessage = null;
+  }
+
+  pararTikTok() {
+    if (!this.tiktok) return;
+    this.tiktok.bridge.detach();
+    this.tiktok.connector.stop();
+    this.tiktok = null;
   }
 }
 

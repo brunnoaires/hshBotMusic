@@ -63,7 +63,7 @@ check('commands.js constroi os slash commands', async () => {
   const names = commands.map((c) => c.name);
   const esperados = [
     'vincular', 'desvincular', 'modo', 'agora', 'pular', 'pausar', 'retomar',
-    'fila', 'limpar', 'rematch', 'sr', 'ajuda',
+    'fila', 'limpar', 'rematch', 'sr', 'tiktok', 'ajuda',
   ];
   for (const n of esperados) {
     if (!names.includes(n)) throw new Error(`faltou /${n}`);
@@ -362,6 +362,98 @@ check('pausa por comando tem precedencia sobre o Spotify', async () => {
 
   sessions.stopAll();
   return 'comando vence o Spotify, e troca de faixa reseta';
+});
+
+check('tiktok: extrai pedido do chat pelo prefixo', async () => {
+  const { extrairPedido } = await import('../src/tiktok/bridge.js');
+
+  if (extrairPedido('!sr never gonna give you up', '!sr') !== 'never gonna give you up') {
+    throw new Error('nao extraiu a query');
+  }
+  if (extrairPedido('  !SR  Tim Maia  ', '!sr') !== 'Tim Maia') throw new Error('nao normalizou');
+  if (extrairPedido('oi pessoal', '!sr') !== null) throw new Error('chat comum virou pedido');
+  if (extrairPedido('!sr', '!sr') !== null) throw new Error('pedido vazio deveria ser null');
+  if (extrairPedido('!sr x', '!sr') !== null) throw new Error('query de 1 char deveria ser null');
+
+  return 'prefixo, espacos e vazio tratados';
+});
+
+check('tiktok bridge: limite por pessoa e prioridade por presente', async () => {
+  const { TikTokBridge } = await import('../src/tiktok/bridge.js');
+  const { EventEmitter } = await import('node:events');
+
+  // Sessao falsa com a mesma superficie que o bridge usa.
+  const criarSessao = () => {
+    const queue = [];
+    return {
+      player: { queue, current: null, carregando: false },
+      pedidosDe(id) {
+        return queue.filter((t) => t.requestedById === id).length +
+          (this.player.current?.requestedById === id ? 1 : 0);
+      },
+      priorizarPedidoDe(id) {
+        const i = queue.findIndex((t) => t.requestedById === id);
+        if (i <= 0) return i === 0;
+        const [t] = queue.splice(i, 1);
+        queue.unshift(t);
+        return true;
+      },
+      pedir(track, { prioridade = false } = {}) {
+        if (this.player.current || this.player.carregando) {
+          if (prioridade) queue.unshift(track);
+          else queue.push(track);
+          return { posicao: prioridade ? 1 : queue.length, tocandoAgora: false };
+        }
+        this.player.current = track;
+        return { posicao: 0, tocandoAgora: true };
+      },
+    };
+  };
+
+  const connector = new EventEmitter();
+  const session = criarSessao();
+  session.player.current = { requestedById: 'outro' }; // ja tem algo tocando
+
+  // Resolver falso: devolve uma faixa com o titulo = query.
+  const resolver = async (q) => ({ youtubeId: q, title: q, artists: 'yt', url: 'u' });
+  const config = { prefixo: '!sr', maxPorUsuario: 2, janelaPrioridadeMs: 60_000 };
+
+  const bridge = new TikTokBridge({ connector, session, config, resolver });
+  bridge.attach();
+
+  const chat = (userId, comment) => connector.emit('chat', { userId, label: '@' + userId, comment });
+  const gift = (userId) => connector.emit('gift', { userId, label: '@' + userId, giftName: 'rosa' });
+  const esperar = () => new Promise((r) => setTimeout(r, 10));
+
+  // ana pede duas — as duas entram.
+  chat('ana', '!sr musica1');
+  chat('ana', '!sr musica2');
+  await esperar();
+  if (session.pedidosDe('ana') !== 2) throw new Error(`ana deveria ter 2, tem ${session.pedidosDe('ana')}`);
+
+  // terceira de ana e barrada pelo limite.
+  chat('ana', '!sr musica3');
+  await esperar();
+  if (session.pedidosDe('ana') !== 2) throw new Error('limite por pessoa nao segurou o 3o pedido');
+
+  // bruno manda presente e depois pede: entra na frente.
+  gift('bruno');
+  chat('bruno', '!sr furou');
+  await esperar();
+  if (session.player.queue[0].title !== 'furou') {
+    throw new Error(`presente nao priorizou; frente = ${session.player.queue[0].title}`);
+  }
+
+  // carla pede normal (vai pro fim), depois manda presente: pedido dela sobe.
+  chat('carla', '!sr normal');
+  await esperar();
+  gift('carla');
+  if (session.player.queue[0].title !== 'normal') {
+    throw new Error('presente nao moveu pedido existente para a frente');
+  }
+
+  bridge.detach();
+  return 'limite, prioridade nova e prioridade de pedido existente ok';
 });
 
 check('sessoes isolam servidores e roteiam por driver', async () => {

@@ -7,6 +7,8 @@ import {
 } from 'discord.js';
 import { buscarPedido, invalidateMatch } from '../audio/resolve.js';
 import { readSpotifyActivity } from '../spotify/presence.js';
+import { TikTokConnector } from '../tiktok/connector.js';
+import { TikTokBridge } from '../tiktok/bridge.js';
 import { createLogger } from '../logger.js';
 
 const log = createLogger('commands');
@@ -62,12 +64,22 @@ export const commands = [
         .setMaxLength(200),
     ),
   new SlashCommandBuilder()
+    .setName('tiktok')
+    .setDescription('Liga o chat de uma live da TikTok à fila de pedidos')
+    .addStringOption((option) =>
+      option
+        .setName('usuario')
+        .setDescription('@usuario da live, ou "parar" para desligar')
+        .setRequired(true)
+        .setMaxLength(100),
+    ),
+  new SlashCommandBuilder()
     .setName('ajuda')
     .setDescription('Lista os comandos e explica como ligar o seu Spotify'),
 ].map((command) => command.toJSON());
 
 /** Comandos que mexem na sessao alheia; ver podeControlar(). */
-const RESTRITOS = new Set(['desvincular', 'modo', 'rematch', 'limpar']);
+const RESTRITOS = new Set(['desvincular', 'modo', 'rematch', 'limpar', 'tiktok']);
 
 const efemero = (content) => ({ content, flags: MessageFlags.Ephemeral });
 
@@ -230,6 +242,65 @@ export async function handleCommand(interaction, { sessions, config, onChange })
   const session = sessions.get(interaction.guildId);
 
   switch (interaction.commandName) {
+    case 'tiktok': {
+      if (!session) {
+        await interaction.reply(
+          efemero('Entre num canal e use `/sr` ou `/vincular` primeiro — o TikTok alimenta essa fila.'),
+        );
+        return;
+      }
+      if (!podeControlar(interaction, session)) {
+        await interaction.reply(
+          efemero(`Só <@${session.driverId}> ou quem gerencia o servidor pode ligar o TikTok.`),
+        );
+        return;
+      }
+
+      const arg = interaction.options.getString('usuario').trim();
+
+      if (/^(parar|stop|off|desligar)$/i.test(arg)) {
+        if (!session.tiktok) {
+          await interaction.reply(efemero('O TikTok já está desligado.'));
+          return;
+        }
+        const quem = session.tiktok.connector.username;
+        session.pararTikTok();
+        await interaction.reply(`Desliguei o chat de **@${quem}**.`);
+        return;
+      }
+
+      await interaction.deferReply();
+
+      // Troca a conexao anterior, se houver: uma sessao segue uma live por vez.
+      session.pararTikTok();
+
+      const connector = new TikTokConnector({
+        username: arg,
+        signApiKey: config.tiktok.signApiKey,
+      });
+
+      try {
+        await connector.start();
+      } catch (err) {
+        await interaction.editReply(`Não consegui conectar: ${err.message}`);
+        return;
+      }
+
+      const bridge = new TikTokBridge({ connector, session, config: config.tiktok });
+      bridge.attach();
+      session.tiktok = { connector, bridge };
+
+      // Live que cai ou termina nao pode deixar a ponte pendurada.
+      connector.once('ended', () => session.pararTikTok());
+      connector.once('disconnected', () => session.pararTikTok());
+
+      await interaction.editReply(
+        `Seguindo o chat de **@${connector.username}**. Peça com \`${config.tiktok.prefixo} <música>\` ` +
+          `(até ${config.tiktok.maxPorUsuario} por pessoa). Presentes furam a fila.`,
+      );
+      return;
+    }
+
     case 'ajuda': {
       await interaction.reply({ embeds: [ajudaEmbed()], flags: MessageFlags.Ephemeral });
       return;
@@ -500,13 +571,10 @@ export async function handleCommand(interaction, { sessions, config, onChange })
         return;
       }
 
-      const lines = session.player.queue
-        .slice(0, 15)
-        .map(
-          (track, index) =>
-            `\`${index + 1}.\` **${track.title}** — ${track.artists}` +
-            (track.requestedBy ? ` · <@${track.requestedBy}>` : ''),
-        );
+      const lines = session.player.queue.slice(0, 15).map((track, index) => {
+        const quem = track.requestedByLabel ?? (track.requestedBy ? `<@${track.requestedBy}>` : null);
+        return `\`${index + 1}.\` **${track.title}** — ${track.artists}` + (quem ? ` · ${quem}` : '');
+      });
       const rest = session.player.queue.length - lines.length;
 
       await interaction.reply(lines.join('\n') + (rest > 0 ? `\n…e mais ${rest}.` : ''));

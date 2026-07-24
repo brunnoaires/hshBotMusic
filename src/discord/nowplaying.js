@@ -22,10 +22,11 @@ export function montarCartao({ track, session, voiceChannelName }) {
 
   const titulo = `${track.artists} — ${track.title}`;
 
-  // Pedido pelo /sr mostra quem pediu; faixa vinda do Spotify mostra quem esta
-  // sendo seguido. Em modo jukebox nao ha driver a citar.
-  const origem = track.requestedBy
-    ? `- Pedido por <@${track.requestedBy}>`
+  // Pedido pelo /sr ou pela TikTok mostra quem pediu; faixa do Spotify mostra
+  // quem esta sendo seguido. Em jukebox sem pedido nao ha ninguem a citar.
+  const quemPediu = track.requestedByLabel ?? (track.requestedBy ? `<@${track.requestedBy}>` : null);
+  const origem = quemPediu
+    ? `- Pedido por ${quemPediu}`
     : session.driverId
       ? `- Seguindo <@${session.driverId}>`
       : null;

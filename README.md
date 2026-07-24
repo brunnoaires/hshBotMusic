@@ -149,6 +149,7 @@ O comando `/ajuda` explica isso dentro do próprio Discord.
 | `/modo follow\|queue` | `follow` troca na hora; `queue` enfileira e toca em sequência | driver 🔒 |
 | `/limpar` | Esvazia a fila sem parar a faixa atual | driver 🔒 |
 | `/rematch` | Achou o vídeo errado? Esquece o match em cache e procura de novo | driver 🔒 |
+| `/tiktok <@usuário\|parar>` | Liga o chat de uma live da TikTok à fila | driver 🔒 |
 
 🔒 = o **driver** (quem rodou `/vincular`) ou quem tem Gerenciar Servidor. Em
 [modo jukebox](#sem-spotify-modo-jukebox) não há driver, então tudo fica aberto.
@@ -190,6 +191,35 @@ pessoa pode comandar vários servidores ao mesmo tempo.
 Assumir o lugar de quem já está comandando exige Gerenciar Servidor — sem isso,
 qualquer um derrubaria a sessão alheia no meio da música. Quando o canal de voz
 esvazia, a sessão encerra sozinha.
+
+### Pedidos pela live da TikTok
+
+Dá para deixar a plateia da sua live da TikTok pedir música. O fluxo reusa a fila
+que já existe:
+
+1. Entre num canal de voz e comece uma sessão (`/sr` ou `/vincular`)
+2. **Capture o áudio do Discord na sua transmissão** — no OBS, adicione o Discord
+   como fonte de áudio, ou roteie a saída de voz para a captura. O bot toca no
+   Discord; o OBS leva esse som para a live
+3. Estando **ao vivo** na TikTok, use `/tiktok @seu_usuario`
+
+A partir daí, quem estiver no chat pede com `!sr <música>`, e presentes furam a
+fila. `/tiktok parar` desliga; a sessão também solta o TikTok sozinha quando a
+live cai ou o canal de voz esvazia.
+
+| `.env` | Padrão | O quê |
+| --- | --- | --- |
+| `TIKTOK_PREFIX` | `!sr` | O que marca um pedido no chat |
+| `TIKTOK_MAX_PER_USER` | `2` | Pedidos simultâneos por espectador, contra spam |
+| `TIKTOK_PRIORITY_WINDOW_S` | `120` | Janela em que o presente prioriza o próximo pedido |
+| `TIKTOK_SIGN_API_KEY` | — | Só se o sign server gratuito começar a limitar |
+
+> ⚠️ **A TikTok não tem API oficial.** A integração faz scraping da live via uma
+> biblioteca da comunidade que depende de um sign server público. É **contra os
+> ToS da TikTok** e quebra quando eles mudam o protocolo — mesma natureza da busca
+> no YouTube. Serve para o seu próprio canal, não para operar como serviço. A
+> biblioteca é carregada só quando você usa `/tiktok`, então nada disso pesa se
+> você não usa.
 
 ### Cartão "Reproduzindo agora"
 
@@ -742,6 +772,11 @@ inicialização.
 | `ANNOUNCE_TRACKS` | Publicar o cartão a cada troca. Padrão ligado. |
 | `MAX_SESSIONS` | Servidores tocando ao mesmo tempo. Padrão `10`. |
 | `YTDLP_CONCURRENCY` | Chamadas ao yt-dlp em paralelo. Padrão `3`. |
+| `YTDLP_COOKIES` | Caminho de um cookies.txt do YouTube, para IP de datacenter. |
+| `TIKTOK_PREFIX` | Prefixo de pedido no chat da TikTok. Padrão `!sr`. |
+| `TIKTOK_MAX_PER_USER` | Pedidos por espectador na fila. Padrão `2`. |
+| `TIKTOK_PRIORITY_WINDOW_S` | Janela de prioridade após presente, em s. Padrão `120`. |
+| `TIKTOK_SIGN_API_KEY` | Chave da EulerStream, se o sign server limitar. |
 | `LOG_LEVEL` | `debug`, `info`, `warn` ou `error`. Padrão `info`. |
 
 ---
@@ -821,6 +856,9 @@ src/
     nowplaying.js    cartão "Reproduzindo agora"
     progressbar.js   barra de progresso em PNG, sem dependências
     deploy.js        registro dos comandos
+  tiktok/
+    connector.js     conexão com o chat da live (scraping)
+    bridge.js        chat/presentes -> fila, com limite e prioridade
 deploy/
   botdc.service      unidade systemd para rodar 24/7
   setup.sh           instala e atualiza numa máquina Linux
