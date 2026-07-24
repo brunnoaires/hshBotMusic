@@ -40,9 +40,9 @@ function scoreCandidate(entry, track, query) {
 
 /** Busca rasa e barata: so ranqueia candidatos, sem extrair formato de nenhum. */
 /** Todos os candidatos da busca, ja ranqueados (melhor primeiro). */
-async function rankearCandidatos(track, query) {
+async function rankearCandidatos(track, query, quantidade = 5) {
   const search = await runJson([
-    `ytsearch5:${query}`,
+    `ytsearch${quantidade}:${query}`,
     '--dump-single-json',
     '--flat-playlist',
     '--no-warnings',
@@ -59,6 +59,51 @@ async function rankearCandidatos(track, query) {
     .sort((a, b) => b.score - a.score);
 }
 
+/**
+ * Minusculas sem acento nem pontuacao, para comparar titulos com tolerancia.
+ * O NFD separa a letra do acento; o replace seguinte descarta o acento junto com
+ * qualquer pontuacao, porque nada disso e a-z0-9.
+ */
+function normalizar(texto) {
+  return String(texto)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/**
+ * O video e realmente uma versao desta musica? Exige que todas as palavras
+ * significativas do titulo da faixa aparecam no titulo do video. Assim "XTRANHO"
+ * traz o clipe, o ao vivo e o acustico, mas corta compilacao e faixa sem relacao.
+ */
+function ehVersaoDaMusica(videoTitle, trackTitle) {
+  const alvo = normalizar(trackTitle);
+  if (!alvo) return true;
+
+  const video = normalizar(videoTitle);
+  const palavras = alvo.split(' ');
+  const significativas = palavras.filter((w) => w.length >= 2);
+
+  return (significativas.length ? significativas : palavras).every((w) => video.includes(w));
+}
+
+/**
+ * Duracao compativel com uma versao da musica. Um ao vivo estica um pouco, um
+ * acelerado encurta — mas album completo, compilacao e video de reacao sao
+ * varias vezes mais longos, e e assim que eles passam pelo filtro de nome.
+ */
+function duracaoPlausivel(entry, trackMs) {
+  const seg = entry.duration;
+  if (!seg) return true; // sem info de duracao, nao descarta
+
+  if (trackMs) {
+    const trackSeg = trackMs / 1000;
+    return seg <= trackSeg * 3 && seg >= trackSeg * 0.4;
+  }
+  return seg <= 900; // sem referencia: corta o que passa de 15 min
+}
+
 async function searchYouTube(track, query) {
   const ranked = await rankearCandidatos(track, query);
   if (!ranked.length) return null;
@@ -70,13 +115,28 @@ async function searchYouTube(track, query) {
 
 /**
  * Lista os candidatos para uma faixa, para o usuario escolher a mao (/rematch).
+ *
+ * Diferente do resolve automatico: busca mais larga (para as variacoes ao vivo,
+ * acustico e afins aparecerem) e filtra pelo nome da musica (para o menu ficar
+ * so com versoes daquela faixa, nao com compilacao ou resultado sem relacao). A
+ * penalidade de variante do ranking so afeta a ordem aqui — nada e escondido.
+ *
  * @returns {Promise<Array<{id, title, channel, durationMs, score}>>}
  */
-export async function candidatosPara(track) {
+export async function candidatosPara(track, { max = 12 } = {}) {
   await resolveCache.ready();
   const query = `${track.artists} - ${track.title}`;
 
-  return (await rankearCandidatos(track, query)).map(({ entry, score }) => ({
+  const ranked = await rankearCandidatos(track, query, 20);
+
+  const porNome = ranked.filter(({ entry }) => ehVersaoDaMusica(entry.title ?? '', track.title));
+  const porNomeEDuracao = porNome.filter(({ entry }) => duracaoPlausivel(entry, track.durationMs));
+
+  // Afrouxa por etapas se ficar sem opcao: nome+duracao -> so nome -> tudo. O
+  // /rematch nunca deve abrir um menu vazio.
+  const base = porNomeEDuracao.length ? porNomeEDuracao : porNome.length ? porNome : ranked;
+
+  return base.slice(0, max).map(({ entry, score }) => ({
     id: entry.id,
     title: entry.title ?? entry.id,
     channel: entry.channel ?? entry.uploader ?? '',

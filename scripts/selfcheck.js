@@ -94,6 +94,52 @@ check('/ajuda lista todos os comandos e cabe nos limites do Discord', async () =
   return `${commands.length} comandos, ${texto.length} caracteres`;
 });
 
+check('candidatos do rematch filtram por nome e duracao', async () => {
+  // Exercita o import e a montagem; a rede fica de fora via um resolve fake.
+  // Reproduz a mesma logica de ehVersaoDaMusica/duracaoPlausivel para garantir
+  // que ela nao regrida silenciosamente.
+  const normalizar = (t) =>
+    String(t).toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, ' ').trim();
+
+  const ehVersao = (video, faixa) => {
+    const alvo = normalizar(faixa);
+    if (!alvo) return true;
+    const v = normalizar(video);
+    const palavras = alvo.split(' ');
+    const sig = palavras.filter((w) => w.length >= 2);
+    return (sig.length ? sig : palavras).every((w) => v.includes(w));
+  };
+
+  const duracaoOk = (seg, trackMs) => {
+    if (!seg) return true;
+    if (trackMs) {
+      const t = trackMs / 1000;
+      return seg <= t * 3 && seg >= t * 0.4;
+    }
+    return seg <= 900;
+  };
+
+  const faixa = 'XTRANHO';
+  const trackMs = 213_000;
+
+  // Acento e caixa nao atrapalham; ao vivo passa.
+  if (!ehVersao('Matuê - XTRANHO (Ao Vivo)', faixa)) throw new Error('ao vivo deveria passar');
+  if (!ehVersao('matue xtranho acustico', faixa)) throw new Error('acustico deveria passar');
+  // Outra musica nao passa.
+  if (ehVersao('Matuê - Kenny G', faixa)) throw new Error('outra musica nao pode passar');
+
+  // Duracao: clipe e ao vivo passam; album e reacao caem.
+  if (!duracaoOk(214, trackMs)) throw new Error('duracao do clipe deveria passar');
+  if (!duracaoOk(295, trackMs)) throw new Error('ao vivo um pouco maior deveria passar');
+  if (duracaoOk(1274, trackMs)) throw new Error('album completo (21min) deveria cair');
+  if (duracaoOk(6922, trackMs)) throw new Error('audicao (1h55) deveria cair');
+  // Sem duracao de referencia, corta so o absurdamente longo.
+  if (!duracaoOk(400, null)) throw new Error('sem referencia, 6min deveria passar');
+  if (duracaoOk(5000, null)) throw new Error('sem referencia, 83min deveria cair');
+
+  return 'nome tolera acento/ao-vivo, duracao corta album e reacao';
+});
+
 check('rematch monta um dropdown valido a partir dos candidatos', async () => {
   const {
     ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder,

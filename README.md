@@ -378,6 +378,14 @@ para o futuro sem interromper o que está tocando. É útil justamente porque o
 ranking às vezes prefere uma re-upload "(Lyrics)" ao vídeo oficial, quando a
 duração dela bate um pouco melhor.
 
+A busca do `/rematch` é mais ampla que a automática e **mostra as variações** da
+mesma música — clipe, áudio, acústico e ao vivo — em vez de escondê-las. Ela
+filtra por duas coisas: o título do vídeo precisa conter o nome da faixa, e a
+duração precisa ser plausível (um ao vivo estica um pouco, mas álbum completo,
+compilação e vídeo de reação são cortados por serem longos demais). Assim o menu
+fica só com versões daquela música, e você escolhe se quer a de estúdio ou a ao
+vivo.
+
 ### Sincronização de posição
 
 Com `SYNC_POSITION` ligado (padrão), o ffmpeg entra no mesmo ponto em que o seu
