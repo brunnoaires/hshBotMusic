@@ -581,9 +581,15 @@ Get-Content botdc.log -Tail 30 -Wait
 
 | Ação | Comando |
 | --- | --- |
+| **Reiniciar** (após mudar código) | `powershell -ExecutionPolicy Bypass -File deploy\restart-windows.ps1` |
 | Parar agora | `Stop-ScheduledTask -TaskName botdc` |
 | Subir de novo | `Start-ScheduledTask -TaskName botdc` |
 | Desinstalar | `powershell -ExecutionPolicy Bypass -File deploy\install-windows.ps1 -Remover` |
+
+Use o `restart-windows.ps1` para recarregar o código novo: ele garante **uma
+única instância**, matando qualquer processo do bot que tenha sobrado antes de
+subir. Reiniciar só com `Stop`/`Start` pode deixar duas instâncias rodando ao
+mesmo tempo, que respondem em dobro e brigam pela conexão de voz.
 
 ⚠️ Antes de instalar, **encerre o `npm start`** que estiver aberto. Duas
 instâncias com o mesmo token respondem em duplicado a cada comando e brigam pela
@@ -870,6 +876,7 @@ deploy/
   botdc.service      unidade systemd para rodar 24/7
   setup.sh           instala e atualiza numa máquina Linux
   install-windows.ps1  registra tarefa agendada no Windows
+  restart-windows.ps1  reinicia garantindo instância única
   start-hidden.vbs   sobe o bot sem janela de terminal
 scripts/
   install-ytdlp.js   baixa o binário
