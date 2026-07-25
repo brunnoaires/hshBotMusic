@@ -22,6 +22,9 @@ export class TikTokConnector extends EventEmitter {
   #signApiKey;
   #connection = null;
   #parado = false;
+  #chatRecebidos = 0;
+  #chatLidos = 0;
+  #avisouFormato = false;
 
   constructor({ username, signApiKey = null }) {
     super();
@@ -111,31 +114,72 @@ export class TikTokConnector extends EventEmitter {
   }
 
   #onChat(data) {
-    const comment = data?.comment;
-    const user = data?.user;
-    if (!comment || !user?.uniqueId) return;
+    this.#chatRecebidos++;
 
-    this.emit('chat', {
-      userId: String(user.userId ?? user.uniqueId),
-      label: `@${user.uniqueId}`,
-      comment: String(comment),
-    });
+    const pedido = parseChat(data);
+    if (pedido) {
+      this.#chatLidos++;
+      log.debug(`chat ${pedido.label}: ${pedido.comment}`);
+      this.emit('chat', pedido);
+    }
+
+    // Verificacao: se chegam mensagens mas nenhuma e lida, a TikTok
+    // provavelmente mudou o formato de novo — foi o que quebrou silenciosamente
+    // desta vez. Avisa uma vez, alto, em vez de descartar tudo calado.
+    if (!this.#avisouFormato && this.#chatRecebidos >= 8 && this.#chatLidos === 0) {
+      this.#avisouFormato = true;
+      log.warn(
+        `recebi ${this.#chatRecebidos} mensagens de chat mas nao consegui ler nenhuma. ` +
+          'A TikTok provavelmente mudou o formato — ajuste parseChat em src/tiktok/connector.js.',
+      );
+    }
   }
 
   #onGift(data) {
-    const user = data?.user;
-    if (!user?.uniqueId) return;
+    const { userId, label } = usuarioDe(data?.user);
+    if (!userId) return;
 
     // Presentes "streakable" (giftType 1) chegam a cada incremento e de novo no
     // fim. Contar so o fim, senao um unico presente vira varios eventos.
-    const tipo = data?.giftDetails?.giftType;
+    const tipo = data?.giftDetails?.giftType ?? data?.giftType;
     if (tipo === 1 && !data.repeatEnd) return;
 
     this.emit('gift', {
-      userId: String(user.userId ?? user.uniqueId),
-      label: `@${user.uniqueId}`,
-      giftName: data?.giftDetails?.giftName ?? 'presente',
+      userId,
+      label,
+      giftName: data?.giftDetails?.giftName ?? data?.gift?.name ?? 'presente',
       count: Number(data?.repeatCount ?? 1),
     });
   }
+}
+
+/**
+ * Extrai id estavel e rotulo de exibicao de um usuario do chat, tolerando as
+ * variacoes de campo da TikTok. `id` (numerico) e o mais confiavel para o limite
+ * por pessoa; o @ e so para mostrar.
+ */
+function usuarioDe(user) {
+  if (!user) return { userId: null, label: '@?' };
+
+  const handle = user.uniqueId || user.nickname || user.id;
+  const id = user.id ?? user.userId ?? user.uniqueId ?? handle;
+
+  return {
+    userId: id != null ? String(id) : null,
+    label: handle ? `@${handle}` : '@?',
+  };
+}
+
+/**
+ * Mensagem de chat crua da TikTok -> { userId, label, comment }, ou null se nao
+ * der para ler. Funcao pura e exportada de proposito, para o selfcheck verificar
+ * que os campos atuais (content/id/nickname) e os antigos (comment/uniqueId)
+ * ainda sao lidos — a defesa offline contra a TikTok mudar o formato de novo.
+ */
+export function parseChat(data) {
+  const texto = data?.content ?? data?.comment;
+  const { userId, label } = usuarioDe(data?.user);
+  if (!texto || !userId) return null;
+
+  return { userId, label, comment: String(texto) };
 }

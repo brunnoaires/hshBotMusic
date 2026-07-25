@@ -555,6 +555,32 @@ check('pausa por comando tem precedencia sobre o Spotify', async () => {
   return 'comando vence o Spotify, e troca de faixa reseta';
 });
 
+check('tiktok: le os campos do chat (formato novo e antigo)', async () => {
+  const { parseChat } = await import('../src/tiktok/connector.js');
+
+  // Formato atual da TikTok: texto em `content`, usuario com id/nickname e SEM
+  // uniqueId — exatamente o que quebrou silenciosamente ao vivo.
+  const novo = parseChat({
+    content: '!sr caramel sleep token',
+    user: { id: '789', nickname: 'Luca Plaster' },
+  });
+  if (novo?.comment !== '!sr caramel sleep token') throw new Error('nao leu content');
+  if (novo.userId !== '789') throw new Error('nao usou o id como identificador estavel');
+  if (!novo.label.includes('Luca')) throw new Error('rotulo deveria usar o nickname');
+
+  // Formato antigo (comment/uniqueId) tem que continuar sendo lido.
+  const antigo = parseChat({ comment: '!sr x', user: { uniqueId: 'joao', id: '1' } });
+  if (antigo?.comment !== '!sr x') throw new Error('nao leu comment (formato antigo)');
+  if (antigo.label !== '@joao') throw new Error('deveria preferir uniqueId no rotulo');
+
+  // Sem texto ou sem usuario -> null (nao emite lixo).
+  if (parseChat({ user: { id: '1' } }) !== null) throw new Error('sem texto deveria ser null');
+  if (parseChat({ content: 'oi' }) !== null) throw new Error('sem usuario deveria ser null');
+  if (parseChat(null) !== null) throw new Error('null deveria ser null');
+
+  return 'content/id/nickname e comment/uniqueId, ambos lidos';
+});
+
 check('tiktok: extrai pedido do chat pelo prefixo', async () => {
   const { extrairPedido } = await import('../src/tiktok/bridge.js');
 
