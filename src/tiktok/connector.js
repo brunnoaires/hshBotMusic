@@ -99,19 +99,6 @@ export class TikTokConnector extends EventEmitter {
     }
 
     this.#connection = conn;
-
-    // DIAGNOSTICO: como a roomInfo identifica o dono da live? (para a verificacao
-    // de propriedade). Loga os caminhos candidatos, sem despejar o objeto todo.
-    const ri = conn.roomInfo ?? {};
-    log.debug(`roomInfo chaves: ${Object.keys(ri).slice(0, 20).join(',')}`);
-    for (const caminho of ['owner', 'room.owner', 'roomInfo.owner', 'anchor', 'operator']) {
-      const obj = caminho.split('.').reduce((o, k) => o?.[k], ri);
-      if (obj) {
-        log.debug(`roomInfo.${caminho} chaves: ${Object.keys(obj).slice(0, 15).join(',')}`);
-        log.debug(`  id=${obj.id ?? obj.id_str ?? obj.uid} handle=${obj.uniqueId ?? obj.display_id ?? obj.unique_id} nick=${obj.nickname}`);
-      }
-    }
-
     log.info(`conectado ao chat de @${this.#username}`);
     this.emit('connected');
   }
