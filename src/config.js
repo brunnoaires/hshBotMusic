@@ -35,6 +35,9 @@ export const config = {
     clientSecret: optional('SPOTIFY_CLIENT_SECRET'),
     refreshToken: optional('SPOTIFY_REFRESH_TOKEN'),
     redirectUri: optional('SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:8888/callback'),
+    // Callback publico do /conectar-spotify: uma pagina estatica que mostra o
+    // code para o streamer colar no Discord. Sem ela, so o dono usa o modo.
+    userRedirectUri: optional('SPOTIFY_USER_REDIRECT_URI'),
   },
   pollIntervalMs: Math.max(1500, Number(optional('POLL_INTERVAL_MS', '3000'))),
   announceTracks: bool('ANNOUNCE_TRACKS', true),

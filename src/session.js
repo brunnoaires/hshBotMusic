@@ -23,15 +23,16 @@ const SEM_API = {
  * so ele (ou quem gerencia o servidor) pode mexer nos controles.
  */
 class GuildSession {
-  constructor({ guildId, driverId, api, config, criarPlayer, announceChannelId, saida, ownerApi }) {
+  constructor({ guildId, driverId, api, config, criarPlayer, announceChannelId, saida, spotifyApi }) {
     this.guildId = guildId;
     /** Quem esta sendo seguido no Spotify. Null = modo jukebox, so /sr. */
     this.driverId = driverId ?? null;
     this.usaApi = api.enabled;
 
-    /** 'voz' = toca no canal do Discord; 'spotify' = enfileira na conta do dono. */
+    /** 'voz' = toca no canal do Discord; 'spotify' = enfileira numa conta Spotify. */
     this.saida = saida === 'spotify' ? 'spotify' : 'voz';
-    this.ownerApi = ownerApi ?? null;
+    /** Conta que recebe os pedidos no modo Spotify: a do streamer que ligou. */
+    this.spotifyApi = spotifyApi ?? null;
     /** Modo Spotify nao tem fila propria (a fila e a do Spotify); conta pedidos
      * por usuario numa janela, so para o limite anti-spam funcionar. */
     this.pedidosSpotify = new Map();
@@ -116,8 +117,9 @@ class GuildSession {
   async #enfileirarNoSpotify(track) {
     const spotifyId = track.id && !track.youtubeId ? track.id : null;
     if (!spotifyId) return { erro: 'sem-spotify' };
+    if (!this.spotifyApi) return { erro: 'sem-conta' };
 
-    const r = await this.ownerApi.queueTrack(spotifyId);
+    const r = await this.spotifyApi.queueTrack(spotifyId);
     if (!r.ok) return { erro: r.erro };
 
     if (track.requestedById) {
@@ -225,7 +227,7 @@ export class SessionManager {
     return dono && userId === dono && this.#ownerApi.enabled ? this.#ownerApi : SEM_API;
   }
 
-  async start({ channel, driverId, announceChannelId = null, saida = 'voz' }) {
+  async start({ channel, driverId, announceChannelId = null, saida = 'voz', spotifyApi = null }) {
     const guildId = channel.guild.id;
 
     // Cada sessao de voz e ~128 kbps de upload continuo mais um ffmpeg. Sem teto,
@@ -248,7 +250,9 @@ export class SessionManager {
       criarPlayer: this.#criarPlayer,
       announceChannelId: this.#config.announceTracks ? announceChannelId : null,
       saida,
-      ownerApi: this.#ownerApi,
+      // A conta do streamer que ligou o modo; cai para a do dono (.env) se nao
+      // vier nenhuma, mantendo o comportamento de instancia self-hosted so sua.
+      spotifyApi: spotifyApi ?? this.#ownerApi,
     });
 
     if (this.#onTrackStart) {

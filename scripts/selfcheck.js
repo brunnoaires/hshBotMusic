@@ -63,7 +63,8 @@ check('commands.js constroi os slash commands', async () => {
   const names = commands.map((c) => c.name);
   const esperados = [
     'vincular', 'desvincular', 'modo', 'agora', 'pular', 'pausar', 'retomar',
-    'fila', 'limpar', 'rematch', 'sr', 'entrar', 'spotify', 'tiktok', 'ajuda',
+    'fila', 'limpar', 'rematch', 'sr', 'entrar', 'spotify', 'conectar-spotify',
+    'desconectar-spotify', 'tiktok', 'ajuda',
   ];
   for (const n of esperados) {
     if (!names.includes(n)) throw new Error(`faltou /${n}`);
@@ -509,6 +510,32 @@ check('jukebox: primeiro pedido toca, os seguintes enfileiram', async () => {
 
   sessions.stopAll();
   return 'toca a primeira, enfileira b e c, sem duplicar';
+});
+
+check('spotify por usuario: guarda, le e esquece o token', async () => {
+  const { salvarToken, temToken, apiDoUsuario, esquecerToken } = await import(
+    '../src/spotify/users.js'
+  );
+
+  // Id ficticio, limpo no fim, para nao sujar o store real.
+  const id = '__selfcheck_fake_user__';
+  try {
+    if (await temToken(id)) throw new Error('id de teste ja existia (limpe o cache)');
+
+    await salvarToken(id, 'refresh-fake-123');
+    if (!(await temToken(id))) throw new Error('token nao persistiu');
+
+    const api = await apiDoUsuario({ clientId: 'a', clientSecret: 'b' }, id);
+    if (!api || typeof api.queueTrack !== 'function') throw new Error('nao virou uma SpotifyApi');
+
+    const semConta = await apiDoUsuario({ clientId: 'a', clientSecret: 'b' }, 'ninguem-xyz');
+    if (semConta !== null) throw new Error('usuario sem token deveria dar null');
+  } finally {
+    await esquecerToken(id);
+  }
+
+  if (await temToken(id)) throw new Error('esquecerToken nao removeu');
+  return 'salva, le, cria SpotifyApi e esquece';
 });
 
 check('modo spotify: enfileira na conta e nao entra em voz', async () => {

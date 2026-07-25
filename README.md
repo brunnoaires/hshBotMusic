@@ -226,6 +226,45 @@ Há duas formas de trazer o bot, e elas mudam de onde vem o áudio:
 O `/sr` e o `/tiktok` funcionam com qualquer uma das duas — o pedido vai para onde
 a sessão manda.
 
+#### Cada streamer com o próprio Spotify
+
+Por padrão, o modo Spotify usa a conta do `.env` (a sua). Para deixar **outros
+streamers** usarem o seu bot com o Spotify **deles**, cada um conecta a própria
+conta com `/conectar-spotify`. Os pedidos daquela sessão passam a ir para a conta
+de quem ligou o modo.
+
+Isso tem **limites da Spotify**, não do bot:
+
+- **Máximo de 25 pessoas.** O app do Spotify em modo de desenvolvimento aceita 25
+  usuários, e você adiciona **cada um manualmente** (nome + e-mail do Spotify) no
+  [dashboard](https://developer.spotify.com/dashboard) → seu app → *User
+  Management*. Passar disso exige a revisão de Extended Quota da Spotify.
+- **Precisa de um callback público.** O login de cada pessoa redireciona para uma
+  página que mostra o código para ela colar no Discord. Essa página
+  ([web/spotify-callback.html](web/spotify-callback.html)) é estática — hospede-a
+  e ponha a URL em `SPOTIFY_USER_REDIRECT_URI`.
+
+Setup (uma vez):
+
+1. **Hospede a página.** O jeito mais simples: ative **GitHub Pages** no seu repo
+   (Settings → Pages → branch `main`, pasta `/`). A URL vira algo como
+   `https://SEU_USUARIO.github.io/hshBotMusic/web/spotify-callback.html`.
+2. **Cadastre essa URL** como Redirect URI no app do Spotify (além da de loopback
+   que já existe — o app aceita várias).
+3. No `.env`: `SPOTIFY_USER_REDIRECT_URI=` com essa mesma URL. Reinicie.
+4. **Adicione cada streamer** em User Management (nome + e-mail do Spotify deles).
+
+Aí cada streamer faz, no Discord:
+
+1. `/conectar-spotify` → o bot manda um link
+2. Abre o link, autoriza, copia o código que a página mostra
+3. `/conectar-spotify codigo:<o código>` → conectado
+4. `/spotify` → os pedidos vão para o Spotify **dele** (precisa de Premium + Spotify
+   aberto e tocando). `/desconectar-spotify` remove.
+
+> Os tokens ficam em `cache/spotify-users.json` (gitignored). São credenciais de
+> terceiros — não compartilhe esse arquivo.
+
 ### Pedidos pela live da TikTok
 
 Dá para deixar a plateia da sua live da TikTok pedir música. O fluxo reusa a fila

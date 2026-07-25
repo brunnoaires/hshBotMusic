@@ -10,6 +10,7 @@ import {
 } from 'discord.js';
 import { buscarPedido, candidatosPara, fixarMatch, invalidateMatch } from '../audio/resolve.js';
 import { readSpotifyActivity } from '../spotify/presence.js';
+import { apiDoUsuario, esquecerToken, salvarToken, trocarCodigo } from '../spotify/users.js';
 import { TikTokConnector } from '../tiktok/connector.js';
 import { TikTokBridge } from '../tiktok/bridge.js';
 import { createLogger } from '../logger.js';
@@ -67,6 +68,18 @@ export const commands = [
   new SlashCommandBuilder()
     .setName('spotify')
     .setDescription('Modo Spotify: pedidos entram na fila do SEU Spotify (sem voz)'),
+  new SlashCommandBuilder()
+    .setName('conectar-spotify')
+    .setDescription('Conecta o SEU Spotify ao bot (para o modo Spotify)')
+    .addStringOption((option) =>
+      option
+        .setName('codigo')
+        .setDescription('Cole aqui o código que a página mostrou (deixe vazio para pegar o link)')
+        .setMaxLength(400),
+    ),
+  new SlashCommandBuilder()
+    .setName('desconectar-spotify')
+    .setDescription('Remove o seu Spotify conectado ao bot'),
   new SlashCommandBuilder()
     .setName('sr')
     .setDescription('Pede uma música sem Spotify: busca por nome ou cola um link')
@@ -168,6 +181,30 @@ function cortar(texto, max) {
   return corte;
 }
 
+/** URL de autorizacao do Spotify para o streamer conectar a propria conta. */
+function urlAutorizacaoSpotify(config) {
+  const url = new URL('https://accounts.spotify.com/authorize');
+  url.search = new URLSearchParams({
+    client_id: config.spotify.clientId,
+    response_type: 'code',
+    redirect_uri: config.spotify.userRedirectUri,
+    scope: 'user-modify-playback-state user-read-playback-state',
+  }).toString();
+  return url.toString();
+}
+
+/**
+ * Conta do Spotify que deve receber os pedidos de quem rodou o comando: a que
+ * ela conectou pelo /conectar-spotify; se for o dono e ele nao conectou, cai
+ * para a conta do .env.
+ */
+async function contaSpotifyDe(interaction, config, ownerApi) {
+  const doUsuario = await apiDoUsuario(config.spotify, interaction.user.id);
+  if (doUsuario) return doUsuario;
+  if (interaction.user.id === config.discord.ownerId && ownerApi?.enabled) return ownerApi;
+  return null;
+}
+
 /** Resposta do /sr no modo Spotify, traduzindo os erros da fila. */
 function explicarSpotify(resultado, rotulo) {
   if (resultado?.spotify) return `Adicionado à sua fila do Spotify: ${rotulo}`;
@@ -175,6 +212,8 @@ function explicarSpotify(resultado, rotulo) {
   switch (resultado?.erro) {
     case 'sem-spotify':
       return 'Esse pedido não existe no Spotify (link do YouTube não entra no modo Spotify).';
+    case 'sem-conta':
+      return 'Nenhum Spotify conectado nesta sessão. Rode `/conectar-spotify`.';
     case 'sem-device':
       return 'Nenhum Spotify ativo. Abra o Spotify e comece a tocar algo, aí tente de novo.';
     case 'sem-premium-ou-escopo':
@@ -445,17 +484,63 @@ export async function handleCommand(interaction, { sessions, config, onChange, o
       return;
     }
 
-    case 'spotify': {
-      // Enfileirar na conta e do dono; so ele pode ligar esse modo.
-      if (interaction.user.id !== config.discord.ownerId) {
+    case 'conectar-spotify': {
+      if (!config.spotify.clientId || !config.spotify.userRedirectUri) {
         await interaction.reply(
-          efemero('O modo Spotify usa a conta do dono do bot; só ele pode ligá-lo.'),
+          efemero('O dono do bot ainda não configurou o login por usuário do Spotify.'),
         );
         return;
       }
-      if (!ownerApi?.enabled) {
+
+      const codigo = interaction.options.getString('codigo')?.trim();
+
+      // Sem codigo: manda o link para a pessoa autorizar.
+      if (!codigo) {
         await interaction.reply(
-          efemero('A Web API do Spotify não está configurada. Rode `npm run login:spotify`.'),
+          efemero(
+            '**1.** Abra este link e autorize:\n' +
+              urlAutorizacaoSpotify(config) +
+              '\n\n**2.** Copie o código que a página mostrar.\n' +
+              '**3.** Rode `/conectar-spotify codigo:<o código>`.',
+          ),
+        );
+        return;
+      }
+
+      // Com codigo: troca por token e guarda para essa pessoa.
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const refreshToken = await trocarCodigo({
+        clientId: config.spotify.clientId,
+        clientSecret: config.spotify.clientSecret,
+        redirectUri: config.spotify.userRedirectUri,
+        code: codigo,
+      });
+      if (!refreshToken) {
+        await interaction.editReply(
+          'Código inválido ou expirado. Rode `/conectar-spotify` de novo para um link novo.',
+        );
+        return;
+      }
+
+      await salvarToken(interaction.user.id, refreshToken);
+      await interaction.editReply(
+        'Spotify conectado! Agora `/spotify` manda os pedidos para a **sua** conta. ' +
+          'Precisa de Premium e do Spotify aberto e tocando.',
+      );
+      return;
+    }
+
+    case 'desconectar-spotify': {
+      await esquecerToken(interaction.user.id);
+      await interaction.reply(efemero('Seu Spotify foi desconectado do bot.'));
+      return;
+    }
+
+    case 'spotify': {
+      const conta = await contaSpotifyDe(interaction, config, ownerApi);
+      if (!conta) {
+        await interaction.reply(
+          efemero('Conecte o seu Spotify primeiro: rode `/conectar-spotify`.'),
         );
         return;
       }
@@ -471,6 +556,7 @@ export async function handleCommand(interaction, { sessions, config, onChange, o
           driverId: interaction.user.id,
           announceChannelId: podeAnunciarEm(interaction) ? interaction.channelId : null,
           saida: 'spotify',
+          spotifyApi: conta,
         });
       } catch (err) {
         await interaction.editReply(`Não consegui ligar o modo Spotify: ${err.message}`);
