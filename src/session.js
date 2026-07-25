@@ -23,11 +23,18 @@ const SEM_API = {
  * so ele (ou quem gerencia o servidor) pode mexer nos controles.
  */
 class GuildSession {
-  constructor({ guildId, driverId, api, config, criarPlayer, announceChannelId }) {
+  constructor({ guildId, driverId, api, config, criarPlayer, announceChannelId, saida, ownerApi }) {
     this.guildId = guildId;
     /** Quem esta sendo seguido no Spotify. Null = modo jukebox, so /sr. */
     this.driverId = driverId ?? null;
     this.usaApi = api.enabled;
+
+    /** 'voz' = toca no canal do Discord; 'spotify' = enfileira na conta do dono. */
+    this.saida = saida === 'spotify' ? 'spotify' : 'voz';
+    this.ownerApi = ownerApi ?? null;
+    /** Modo Spotify nao tem fila propria (a fila e a do Spotify); conta pedidos
+     * por usuario numa janela, so para o limite anti-spam funcionar. */
+    this.pedidosSpotify = new Map();
 
     /** Canal onde /vincular foi usado; e la que os cartoes sao publicados. */
     this.announceChannelId = announceChannelId ?? null;
@@ -83,9 +90,11 @@ class GuildSession {
    * o modo follow, que interromperia a faixa atual. Pedido nunca corta o que ja
    * esta tocando — quem pediu antes ouve inteiro.
    */
-  pedir(track, { prioridade = false } = {}) {
+  async pedir(track, { prioridade = false } = {}) {
     // Checar tambem `carregando`: dois /sr seguidos veriam `current` ainda nulo
     // durante a resolucao do primeiro, e o segundo cortaria o primeiro.
+    if (this.saida === 'spotify') return this.#enfileirarNoSpotify(track);
+
     if (this.player.current || this.player.carregando) {
       // Prioridade (presente da TikTok) entra na frente, mas nunca corta o que
       // ja esta tocando — quem esta ouvindo agora nao perde a faixa.
@@ -100,8 +109,34 @@ class GuildSession {
     return { posicao: 0, tocandoAgora: true };
   }
 
-  /** Quantos pedidos de um usuario (TikTok) estao na fila ou tocando agora. */
+  /**
+   * Enfileira o pedido na conta do Spotify do dono. So funciona se o pedido foi
+   * identificado no Spotify (tem id de faixa e nao um video solto do YouTube).
+   */
+  async #enfileirarNoSpotify(track) {
+    const spotifyId = track.id && !track.youtubeId ? track.id : null;
+    if (!spotifyId) return { erro: 'sem-spotify' };
+
+    const r = await this.ownerApi.queueTrack(spotifyId);
+    if (!r.ok) return { erro: r.erro };
+
+    if (track.requestedById) {
+      const lista = this.pedidosSpotify.get(track.requestedById) ?? [];
+      lista.push(Date.now());
+      this.pedidosSpotify.set(track.requestedById, lista);
+    }
+    return { spotify: true, tocandoAgora: false };
+  }
+
+  /** Quantos pedidos de um usuario contam para o limite anti-spam. */
   pedidosDe(userId) {
+    if (this.saida === 'spotify') {
+      // Sem fila propria: conta os pedidos dos ultimos 10 min.
+      const corte = Date.now() - 10 * 60_000;
+      const recentes = (this.pedidosSpotify.get(userId) ?? []).filter((t) => t > corte);
+      this.pedidosSpotify.set(userId, recentes);
+      return recentes.length;
+    }
     const naFila = this.player.queue.filter((t) => t.requestedById === userId).length;
     const tocando = this.player.current?.requestedById === userId ? 1 : 0;
     return naFila + tocando;
@@ -112,6 +147,10 @@ class GuildSession {
    * @returns {boolean} se havia um pedido dele para priorizar.
    */
   priorizarPedidoDe(userId) {
+    // A fila do Spotify nao da para reordenar pela API; no modo Spotify o
+    // presente so nao segura o pedido, mas nao fura fila.
+    if (this.saida === 'spotify') return false;
+
     const idx = this.player.queue.findIndex((t) => t.requestedById === userId);
     if (idx <= 0) return idx === 0; // ja esta na frente, ou nao existe
     const [track] = this.player.queue.splice(idx, 1);
@@ -186,12 +225,13 @@ export class SessionManager {
     return dono && userId === dono && this.#ownerApi.enabled ? this.#ownerApi : SEM_API;
   }
 
-  async start({ channel, driverId, announceChannelId = null }) {
+  async start({ channel, driverId, announceChannelId = null, saida = 'voz' }) {
     const guildId = channel.guild.id;
 
-    // Cada sessao e ~128 kbps de upload continuo mais um ffmpeg. Sem teto, o
-    // gargalo aparece como audio picotando para todos ao mesmo tempo, sem
-    // nenhuma pista do motivo. Melhor recusar a nova e dizer o porque.
+    // Cada sessao de voz e ~128 kbps de upload continuo mais um ffmpeg. Sem teto,
+    // o gargalo aparece como audio picotando para todos ao mesmo tempo, sem
+    // nenhuma pista do motivo. Melhor recusar a nova e dizer o porque. Modo
+    // Spotify nao ocupa voz, mas entra na conta do mesmo jeito.
     if (!this.#sessions.has(guildId) && this.#sessions.size >= this.#config.maxSessions) {
       throw new Error(
         `limite de ${this.#config.maxSessions} servidores tocando ao mesmo tempo atingido`,
@@ -207,6 +247,8 @@ export class SessionManager {
       config: this.#config,
       criarPlayer: this.#criarPlayer,
       announceChannelId: this.#config.announceTracks ? announceChannelId : null,
+      saida,
+      ownerApi: this.#ownerApi,
     });
 
     if (this.#onTrackStart) {
@@ -215,18 +257,23 @@ export class SessionManager {
 
     this.#sessions.set(guildId, session);
 
-    try {
-      await session.player.join(channel);
-    } catch (err) {
-      this.#sessions.delete(guildId);
-      session.stop();
-      throw err;
-    }
+    // Modo Spotify nao entra em canal de voz: o audio sai pelo Spotify do dono.
+    if (saida !== 'spotify') {
+      try {
+        await session.player.join(channel);
+      } catch (err) {
+        this.#sessions.delete(guildId);
+        session.stop();
+        throw err;
+      }
 
-    session.watcher.start();
+      session.watcher.start();
+    }
     log.info(
       `sessao em ${guildId} para ${driverId} ` +
-        `(${session.usaApi ? 'presence + Web API' : 'so presence'})`,
+        (saida === 'spotify'
+          ? '(saida: fila do Spotify)'
+          : `(${session.usaApi ? 'presence + Web API' : 'so presence'})`),
     );
 
     return session;

@@ -137,7 +137,9 @@ O comando `/ajuda` explica isso dentro do próprio Discord.
 
 | Comando | O que faz | Quem pode |
 | --- | --- | --- |
-| `/sr <música>` | Pede uma música sem Spotify: busca por nome ou cola um link | qualquer um |
+| `/sr <música>` | Pede uma música: busca por nome ou cola um link | qualquer um |
+| `/entrar [canal]` | Entra no canal de voz pronto para pedidos, sem precisar do `/sr` | qualquer um |
+| `/spotify` | Modo Spotify: pedidos entram na fila do **seu** Spotify (sem voz) | dono |
 | `/vincular [canal]` | Entra no canal de voz (padrão: o seu) e passa a seguir o **seu** Spotify | qualquer um |
 | `/agora` | Mostra o que está tocando, com progresso e o vídeo escolhido | qualquer um |
 | `/fila` | Lista o que está enfileirado | qualquer um |
@@ -208,15 +210,31 @@ Assumir o lugar de quem já está comandando exige Gerenciar Servidor — sem is
 qualquer um derrubaria a sessão alheia no meio da música. Quando o canal de voz
 esvazia, a sessão encerra sozinha.
 
+### Onde o áudio sai: Discord ou Spotify
+
+Há duas formas de trazer o bot, e elas mudam de onde vem o áudio:
+
+- **`/entrar`** — o bot entra num canal de voz e toca ali (áudio do YouTube). Você
+  captura o **Discord** no OBS. Funciona sem Premium.
+- **`/spotify`** — o bot **não** entra em voz; os pedidos entram na fila do **seu
+  Spotify**, o seu Spotify toca, e você captura o **Spotify** no OBS. Áudio
+  original e dentro dos ToS, mas precisa de **Premium**, o Spotify aberto e
+  tocando, e o login refeito (`npm run login:spotify`) para o novo escopo. Só o
+  dono liga, porque usa a conta dele. Link do YouTube não entra neste modo, e o
+  presente da TikTok não fura fila (a fila do Spotify não é reordenável pela API).
+
+O `/sr` e o `/tiktok` funcionam com qualquer uma das duas — o pedido vai para onde
+a sessão manda.
+
 ### Pedidos pela live da TikTok
 
 Dá para deixar a plateia da sua live da TikTok pedir música. O fluxo reusa a fila
 que já existe:
 
-1. Entre num canal de voz e comece uma sessão (`/sr` ou `/vincular`)
-2. **Capture o áudio do Discord na sua transmissão** — no OBS, adicione o Discord
-   como fonte de áudio, ou roteie a saída de voz para a captura. O bot toca no
-   Discord; o OBS leva esse som para a live
+1. Traga o bot com **`/entrar`** (áudio no Discord) ou **`/spotify`** (fila do seu
+   Spotify)
+2. **Capture o áudio na sua transmissão** — Discord ou Spotify no OBS, conforme o
+   modo escolhido
 3. Estando **ao vivo** na TikTok, use `/tiktok @seu_usuario`
 
 A partir daí, quem estiver no chat pede com `!sr <música>`, e presentes furam a

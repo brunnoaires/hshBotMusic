@@ -13,7 +13,10 @@ if (!clientId || !clientSecret) {
   process.exit(1);
 }
 
-const SCOPES = 'user-read-currently-playing user-read-playback-state';
+// modify-playback-state permite enfileirar faixas na sua conta (modo Spotify do
+// /sr e do TikTok). Se voce nao usa esse modo, ele fica so nao usado.
+const SCOPES =
+  'user-read-currently-playing user-read-playback-state user-modify-playback-state';
 const state = randomBytes(16).toString('hex');
 const redirect = new URL(redirectUri);
 

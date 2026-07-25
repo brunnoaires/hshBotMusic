@@ -171,6 +171,34 @@ export class SpotifyApi {
   }
 
   /**
+   * Enfileira uma faixa na conta do Spotify (fila do player ativo).
+   *
+   * E o "modo Spotify": o pedido entra na SUA fila e o seu Spotify toca — audio
+   * original, dentro dos ToS, capturado no OBS. Precisa de Premium, um device
+   * ativo (Spotify aberto tocando) e o escopo user-modify-playback-state.
+   *
+   * @returns {Promise<{ok: boolean, erro?: string}>}
+   */
+  async queueTrack(id) {
+    try {
+      const params = new URLSearchParams({ uri: `spotify:track:${id}` });
+      const res = await fetch(`${API_BASE}/me/player/queue?${params}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${await this.#token()}` },
+      });
+      if (res.status === 204 || res.ok) return { ok: true };
+
+      // 404 = nenhum device ativo; 403 = sem Premium ou escopo faltando.
+      if (res.status === 404) return { ok: false, erro: 'sem-device' };
+      if (res.status === 403) return { ok: false, erro: 'sem-premium-ou-escopo' };
+      return { ok: false, erro: `http-${res.status}` };
+    } catch (err) {
+      log.debug(`queueTrack falhou: ${err.message}`);
+      return { ok: false, erro: err.message };
+    }
+  }
+
+  /**
    * Faixa por id — usado quando o /sr recebe um link do Spotify. Metadados
    * canonicos direto, sem busca; o audio ainda vem do YouTube.
    */

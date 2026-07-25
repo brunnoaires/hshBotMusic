@@ -56,6 +56,18 @@ export const commands = [
     .setName('rematch')
     .setDescription('Achou o vídeo errado? Esquece o match em cache e procura de novo'),
   new SlashCommandBuilder()
+    .setName('entrar')
+    .setDescription('Entra no canal de voz pronto para pedidos, sem precisar do /sr')
+    .addChannelOption((option) =>
+      option
+        .setName('canal')
+        .setDescription('Canal de voz (padrão: o que você está)')
+        .addChannelTypes(ChannelType.GuildVoice),
+    ),
+  new SlashCommandBuilder()
+    .setName('spotify')
+    .setDescription('Modo Spotify: pedidos entram na fila do SEU Spotify (sem voz)'),
+  new SlashCommandBuilder()
     .setName('sr')
     .setDescription('Pede uma música sem Spotify: busca por nome ou cola um link')
     .addStringOption((option) =>
@@ -154,6 +166,22 @@ function cortar(texto, max) {
   const ultimo = corte.charCodeAt(corte.length - 1);
   if (ultimo >= 0xd800 && ultimo <= 0xdbff) corte = corte.slice(0, -1);
   return corte;
+}
+
+/** Resposta do /sr no modo Spotify, traduzindo os erros da fila. */
+function explicarSpotify(resultado, rotulo) {
+  if (resultado?.spotify) return `Adicionado à sua fila do Spotify: ${rotulo}`;
+
+  switch (resultado?.erro) {
+    case 'sem-spotify':
+      return 'Esse pedido não existe no Spotify (link do YouTube não entra no modo Spotify).';
+    case 'sem-device':
+      return 'Nenhum Spotify ativo. Abra o Spotify e comece a tocar algo, aí tente de novo.';
+    case 'sem-premium-ou-escopo':
+      return 'Falhou: precisa de Spotify **Premium** e do login refeito com `npm run login:spotify`.';
+    default:
+      return `Não consegui adicionar à fila do Spotify (${resultado?.erro ?? 'erro'}).`;
+  }
 }
 
 function duracaoLegivel(ms) {
@@ -374,6 +402,90 @@ export async function handleCommand(interaction, { sessions, config, onChange, o
       return;
     }
 
+    case 'entrar': {
+      if (session) {
+        await interaction.reply(
+          efemero(
+            session.saida === 'spotify'
+              ? 'Já estou no modo Spotify aqui. Use `/desvincular` para trocar.'
+              : `Já estou em um canal aqui. Peça com \`/sr\` ou ligue o \`/tiktok\`.`,
+          ),
+        );
+        return;
+      }
+
+      const channel = canalDeVoz(interaction);
+      if (!channel) {
+        await interaction.reply(efemero('Entre em um canal de voz ou informe um em `canal`.'));
+        return;
+      }
+      if (faltaPermissaoDeVoz(channel, interaction)) {
+        await interaction.reply(
+          efemero(`Não tenho permissão de conectar e falar em **${channel.name}**.`),
+        );
+        return;
+      }
+
+      await interaction.deferReply();
+      try {
+        await sessions.start({
+          channel,
+          driverId: null,
+          announceChannelId: podeAnunciarEm(interaction) ? interaction.channelId : null,
+        });
+      } catch (err) {
+        await interaction.editReply(`Não consegui entrar em **${channel.name}**: ${err.message}`);
+        return;
+      }
+      onChange?.();
+
+      await interaction.editReply(
+        `Entrei em **${channel.name}**. Peça com \`/sr <música>\` ou ligue o chat da live com \`/tiktok\`.`,
+      );
+      return;
+    }
+
+    case 'spotify': {
+      // Enfileirar na conta e do dono; so ele pode ligar esse modo.
+      if (interaction.user.id !== config.discord.ownerId) {
+        await interaction.reply(
+          efemero('O modo Spotify usa a conta do dono do bot; só ele pode ligá-lo.'),
+        );
+        return;
+      }
+      if (!ownerApi?.enabled) {
+        await interaction.reply(
+          efemero('A Web API do Spotify não está configurada. Rode `npm run login:spotify`.'),
+        );
+        return;
+      }
+
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+      // Precisa de um canal-alvo para a chave da sessao (uma por servidor),
+      // mesmo sem entrar nele.
+      const guildFicticio = { id: interaction.guildId, guild: interaction.guild };
+      try {
+        await sessions.start({
+          channel: guildFicticio,
+          driverId: interaction.user.id,
+          announceChannelId: podeAnunciarEm(interaction) ? interaction.channelId : null,
+          saida: 'spotify',
+        });
+      } catch (err) {
+        await interaction.editReply(`Não consegui ligar o modo Spotify: ${err.message}`);
+        return;
+      }
+      onChange?.();
+
+      await interaction.editReply(
+        'Modo **Spotify** ligado. Pedidos (por `/sr` ou pelo `/tiktok`) entram na fila do seu ' +
+          'Spotify. Deixe o Spotify **aberto e tocando** (precisa de Premium) e capture o áudio ' +
+          'dele no OBS. Link do YouTube não funciona neste modo.',
+      );
+      return;
+    }
+
     case 'sr': {
       const pedido = interaction.options.getString('musica').trim();
 
@@ -417,10 +529,16 @@ export async function handleCommand(interaction, { sessions, config, onChange, o
       }
 
       track.requestedBy = interaction.user.id;
-      const { posicao, tocandoAgora } = alvo.pedir(track);
+      const resultado = await alvo.pedir(track);
 
       const duracao = duracaoLegivel(track.durationMs);
       const rotulo = `**[${track.title}](${track.url})**${duracao ? ` \`${duracao}\`` : ''}`;
+
+      // Modo Spotify: enfileirou na conta do dono (ou explicou o porque de falhar).
+      if (alvo.saida === 'spotify') {
+        await interaction.editReply(explicarSpotify(resultado, rotulo));
+        return;
+      }
 
       // Em modo follow, a proxima troca no Spotify cortaria o pedido. Avisar
       // aqui evita a pessoa achar que o bot ignorou o comando.
@@ -430,7 +548,9 @@ export async function handleCommand(interaction, { sessions, config, onChange, o
           : '';
 
       await interaction.editReply(
-        tocandoAgora ? `Tocando agora: ${rotulo}${aviso}` : `Na fila (#${posicao}): ${rotulo}${aviso}`,
+        resultado.tocandoAgora
+          ? `Tocando agora: ${rotulo}${aviso}`
+          : `Na fila (#${resultado.posicao}): ${rotulo}${aviso}`,
       );
       return;
     }

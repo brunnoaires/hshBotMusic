@@ -87,11 +87,18 @@ export class TikTokBridge {
     // Presente recente concede prioridade ao proximo pedido.
     const prioridade = this.#consumirPrioridade(userId);
 
-    const { posicao, tocandoAgora } = this.#session.pedir(track, { prioridade });
-    log.info(
-      `${label} pediu "${track.title}"` +
-        (tocandoAgora ? ' (tocando agora)' : ` (#${posicao}${prioridade ? ', prioritario' : ''})`),
-    );
+    const r = await this.#session.pedir(track, { prioridade });
+
+    if (r?.erro) {
+      log.debug(`pedido de ${label} nao entrou (${r.erro}): ${track.title}`);
+      return;
+    }
+    const onde = r?.spotify
+      ? 'fila do Spotify'
+      : r?.tocandoAgora
+        ? 'tocando agora'
+        : `#${r?.posicao}${prioridade ? ', prioritario' : ''}`;
+    log.info(`${label} pediu "${track.title}" (${onde})`);
   }
 
   #onGift({ userId, label, giftName }) {

@@ -63,7 +63,7 @@ check('commands.js constroi os slash commands', async () => {
   const names = commands.map((c) => c.name);
   const esperados = [
     'vincular', 'desvincular', 'modo', 'agora', 'pular', 'pausar', 'retomar',
-    'fila', 'limpar', 'rematch', 'sr', 'tiktok', 'ajuda',
+    'fila', 'limpar', 'rematch', 'sr', 'entrar', 'spotify', 'tiktok', 'ajuda',
   ];
   for (const n of esperados) {
     if (!names.includes(n)) throw new Error(`faltou /${n}`);
@@ -490,25 +490,80 @@ check('jukebox: primeiro pedido toca, os seguintes enfileiram', async () => {
 
   const faixa = (id) => ({ id, youtubeId: id, title: id, artists: 'x' });
 
-  const um = s.pedir(faixa('a'));
+  const um = await s.pedir(faixa('a'));
   if (!um.tocandoAgora) throw new Error('o primeiro pedido deveria tocar na hora');
   if (s.player.queue.length !== 0) {
     throw new Error('o que toca agora nao pode ficar tambem na fila, senao repete');
   }
 
   // Ainda resolvendo: o segundo pedido nao pode cortar o primeiro.
-  const dois = s.pedir(faixa('b'));
+  const dois = await s.pedir(faixa('b'));
   if (dois.tocandoAgora) throw new Error('o segundo pedido cortou o primeiro durante a resolucao');
   if (dois.posicao !== 1) throw new Error(`posicao errada: ${dois.posicao}`);
 
   await new Promise((r) => setTimeout(r, 30));
-  const tres = s.pedir(faixa('c'));
+  const tres = await s.pedir(faixa('c'));
   if (tres.tocandoAgora) throw new Error('deveria enfileirar, ja tem faixa tocando');
   if (s.player.tocadas.join(',') !== 'a') throw new Error(`tocou ${s.player.tocadas}`);
   if (s.player.queue.length !== 2) throw new Error(`fila com ${s.player.queue.length}`);
 
   sessions.stopAll();
   return 'toca a primeira, enfileira b e c, sem duplicar';
+});
+
+check('modo spotify: enfileira na conta e nao entra em voz', async () => {
+  const { SessionManager } = await import('../src/session.js');
+
+  const enfileiradas = [];
+  const ownerApi = {
+    enabled: true,
+    currentlyPlaying: async () => null,
+    queue: async () => [],
+    async queueTrack(id) {
+      enfileiradas.push(id);
+      return { ok: true };
+    },
+  };
+
+  let entrouEmVoz = false;
+  const criarPlayer = () => ({
+    queue: [], current: null, carregando: false, mode: 'follow',
+    join: async () => { entrouEmVoz = true; },
+    leave() {}, skip: () => null, play: async () => {},
+    pause() {}, resume() {}, onSpotifyTrack() {},
+  });
+
+  const sessions = new SessionManager({
+    config: {
+      discord: { ownerId: 'dono' }, defaultMode: 'follow', syncPosition: true,
+      pollIntervalMs: 60_000, maxSessions: 10, announceTracks: false,
+    },
+    ownerApi,
+    criarPlayer,
+  });
+
+  const s = await sessions.start({
+    channel: { guild: { id: 'g1' } }, driverId: 'dono', saida: 'spotify',
+  });
+  if (s.saida !== 'spotify') throw new Error('saida deveria ser spotify');
+  if (entrouEmVoz) throw new Error('modo spotify nao pode entrar em canal de voz');
+
+  // Faixa identificada no Spotify (id sem youtubeId) -> vai para a fila.
+  const r1 = await s.pedir({ id: 'sp1', title: 'x', requestedById: 'ana' });
+  if (!r1.spotify) throw new Error('deveria ter enfileirado no Spotify');
+  if (enfileiradas.join() !== 'sp1') throw new Error(`queueTrack recebeu ${enfileiradas}`);
+
+  // Link do YouTube (tem youtubeId) nao da para enfileirar no Spotify.
+  const r2 = await s.pedir({ id: 'yt:abc', youtubeId: 'abc', title: 'y' });
+  if (r2.erro !== 'sem-spotify') throw new Error('link do YouTube deveria dar sem-spotify');
+
+  // Limite por pessoa conta os pedidos recentes (aqui ana ja tem 1).
+  if (s.pedidosDe('ana') !== 1) throw new Error(`ana deveria ter 1, tem ${s.pedidosDe('ana')}`);
+  // Presente nao reordena a fila do Spotify.
+  if (s.priorizarPedidoDe('ana') !== false) throw new Error('nao da para priorizar no Spotify');
+
+  sessions.stopAll();
+  return 'enfileira faixa do Spotify, recusa YouTube, conta por usuario, sem voz';
 });
 
 check('pausa por comando tem precedencia sobre o Spotify', async () => {
