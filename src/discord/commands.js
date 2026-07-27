@@ -96,6 +96,17 @@ export const commands = [
     .setName('spotify-contas')
     .setDescription('(dono) Lista quem conectou o Spotify e o e-mail para liberar no painel'),
   new SlashCommandBuilder()
+    .setName('spotify-fila')
+    .setDescription('Joga uma música na fila do SEU Spotify agora, sem mexer no que a call toca')
+    .addStringOption((option) =>
+      option
+        .setName('musica')
+        .setDescription('Nome da música (ou link do Spotify)')
+        .setRequired(true)
+        .setMinLength(2)
+        .setMaxLength(200),
+    ),
+  new SlashCommandBuilder()
     .setName('sr')
     .setDescription('Pede uma música sem Spotify: busca por nome ou cola um link')
     .addStringOption((option) =>
@@ -297,6 +308,13 @@ export function ajudaEmbed() {
         value:
           'Em vez de tocar na call, o bot põe os pedidos na fila do **seu** Spotify ' +
           '(precisa de Premium). Aí sim há um login, uma vez: `/conectar-spotify`.',
+      },
+      {
+        name: 'Jogar uma música no Spotify sem sair da call (/spotify-fila)',
+        value:
+          'Comando avulso: `/spotify-fila <música>` põe a faixa na fila do **seu** Spotify ' +
+          'na hora, mesmo com o bot tocando na call. Não muda o modo da sessão — a call ' +
+          'continua igual. Precisa ter conectado com `/conectar-spotify` (e Premium).',
       },
     );
 }
@@ -572,6 +590,31 @@ export async function handleCommand(interaction, { sessions, config, onChange, o
           (email ? `já mandei o seu (**${email}**) para ele.` : 'rode de novo com `email:` para ele te liberar.') +
           ' Precisa de Premium e do Spotify aberto e tocando.',
       );
+      return;
+    }
+
+    case 'spotify-fila': {
+      // Avulso: enfileira no Spotify de quem chamou, sem tocar na sessao/call.
+      const conta = await contaSpotifyDe(interaction, config, ownerApi);
+      if (!conta) {
+        await interaction.reply(efemero('Conecte o seu Spotify primeiro: `/conectar-spotify`.'));
+        return;
+      }
+
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+      const track = await buscarPedido(interaction.options.getString('musica').trim(), {
+        spotifyApi: ownerApi,
+      });
+      // Precisa ser uma faixa do Spotify (id sem youtubeId); YouTube nao entra na fila.
+      if (!track || track.youtubeId || !track.id) {
+        await interaction.editReply('Não achei essa música no Spotify (link do YouTube não vale aqui).');
+        return;
+      }
+
+      const r = await conta.queueTrack(track.id);
+      const rotulo = `**[${track.artists} — ${track.title}](${track.url})**`;
+      await interaction.editReply(explicarSpotify(r.ok ? { spotify: true } : r, rotulo));
       return;
     }
 

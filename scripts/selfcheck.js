@@ -64,7 +64,7 @@ check('commands.js constroi os slash commands', async () => {
   const esperados = [
     'vincular', 'desvincular', 'modo', 'agora', 'pular', 'pausar', 'retomar',
     'fila', 'limpar', 'rematch', 'sr', 'entrar', 'spotify', 'conectar-spotify',
-    'desconectar-spotify', 'spotify-contas', 'tiktok', 'ajuda',
+    'desconectar-spotify', 'spotify-contas', 'spotify-fila', 'tiktok', 'ajuda',
   ];
   for (const n of esperados) {
     if (!names.includes(n)) throw new Error(`faltou /${n}`);

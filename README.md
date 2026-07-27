@@ -140,6 +140,7 @@ O comando `/ajuda` explica isso dentro do próprio Discord.
 | `/sr <música>` | Pede uma música: busca por nome ou cola um link | qualquer um |
 | `/entrar [canal]` | Entra no canal de voz pronto para pedidos, sem precisar do `/sr` | qualquer um |
 | `/spotify` | Modo Spotify: pedidos entram na fila do **seu** Spotify (sem voz) | dono |
+| `/spotify-fila <música>` | Avulso: joga uma faixa na fila do **seu** Spotify na hora, mesmo com o bot tocando na call — não muda o modo | qualquer um |
 | `/vincular [canal]` | Entra no canal de voz (padrão: o seu) e passa a seguir o **seu** Spotify | qualquer um |
 | `/agora` | Mostra o que está tocando, com progresso e o vídeo escolhido | qualquer um |
 | `/fila` | Lista o que está enfileirado | qualquer um |
