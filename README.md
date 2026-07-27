@@ -874,6 +874,7 @@ inicialização.
 | `YTDLP_CONCURRENCY` | Chamadas ao yt-dlp em paralelo. Padrão `3`. |
 | `YTDLP_COOKIES` | Caminho de um cookies.txt do YouTube, para IP de datacenter. |
 | `TIKTOK_PREFIX` | Prefixo de pedido no chat da TikTok. Padrão `!sr`. |
+| `TIKTOK_COOLDOWN_S` | Intervalo mínimo entre pedidos da mesma pessoa. Padrão `10`. |
 | `TIKTOK_MAX_PER_USER` | Pedidos por espectador na fila. Padrão `2`. |
 | `TIKTOK_PRIORITY_WINDOW_S` | Janela de prioridade após presente, em s. Padrão `120`. |
 | `TIKTOK_SIGN_API_KEY` | Chave da EulerStream, se o sign server limitar. |
