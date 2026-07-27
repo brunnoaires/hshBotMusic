@@ -214,6 +214,12 @@ function explicarSpotify(resultado, rotulo) {
       return 'Esse pedido não existe no Spotify (link do YouTube não entra no modo Spotify).';
     case 'sem-conta':
       return 'Nenhum Spotify conectado nesta sessão. Rode `/conectar-spotify`.';
+    case 'nao-registrado':
+      return (
+        'Sua conta do Spotify ainda não foi **liberada** pelo dono do bot. Conectar não ' +
+        'basta: o dono precisa te adicionar em *User Management* no painel do Spotify, com o ' +
+        'e-mail da sua conta. Passe o e-mail do seu Spotify para ele.'
+      );
     case 'sem-device':
       return (
         'O Spotify não está tocando em nenhum aparelho. Abra o Spotify e **dê play em ' +

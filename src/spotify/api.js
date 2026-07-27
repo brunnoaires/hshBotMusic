@@ -188,15 +188,18 @@ export class SpotifyApi {
       });
       if (res.status === 204 || res.ok) return { ok: true };
 
-      // O motivo exato vem no corpo (reason), muito mais util que o codigo: um
-      // 403 tanto pode ser "sem Premium" quanto "device inativo".
+      // O motivo vem no corpo. Pode ser JSON (reason) ou texto puro (o caso de
+      // "usuario nao registrado no painel", que nem e JSON valido).
+      const corpo = await res.text().catch(() => '');
       let reason = '';
       try {
-        reason = (await res.json())?.error?.reason ?? '';
+        reason = JSON.parse(corpo)?.error?.reason ?? '';
       } catch {
-        // corpo nao-JSON; segue so pelo status
+        // corpo nao-JSON; segue pelo texto e pelo status
       }
 
+      // App em modo de desenvolvimento: so quem esta no User Management usa a API.
+      if (/not registered|development mode/i.test(corpo)) return { ok: false, erro: 'nao-registrado' };
       if (res.status === 404 || reason === 'NO_ACTIVE_DEVICE') return { ok: false, erro: 'sem-device' };
       if (reason === 'PREMIUM_REQUIRED') return { ok: false, erro: 'sem-premium' };
       // 403 sem reason claro quase sempre e device inativo/restrito.
