@@ -247,27 +247,32 @@ export function ajudaEmbed() {
     .setColor(0x1db954)
     .setTitle('Comandos do botdc')
     .setDescription(
-      'Você troca a música no Spotify e o bot troca na call, começando no mesmo ponto.\n\n' +
+      'O bot toca música numa call do Discord. Três jeitos de usar:\n' +
+        '• **Pedir música** — `/sr <nome>` (ou cole um link do YouTube/Spotify)\n' +
+        '• **Seguir o seu Spotify** — `/vincular`, e o que você ouve ele toca junto\n' +
+        '• **Chat da live da TikTok** — `/tiktok`, e a plateia pede com `!sr <nome>`\n\n' +
         lista,
     )
     .addFields(
       {
         name: '🔒 Quem pode usar',
         value:
-          'Os marcados com cadeado são de quem rodou `/vincular` ou de quem tem ' +
-          '**Gerenciar Servidor**. O resto é livre para todo mundo. Em modo jukebox ' +
-          '(sem ninguém vinculado), tudo fica aberto — a fila é coletiva.',
+          'Os com cadeado são de quem trouxe o bot (ou de quem tem **Gerenciar ' +
+          'Servidor**). O resto é livre. Sem ninguém vinculado, tudo fica aberto — a ' +
+          'fila é coletiva.',
       },
       {
-        name: 'Primeira vez aqui?',
-        value: COMO_LIGAR,
-      },
-      {
-        name: 'Preciso fazer login no Spotify?',
+        name: 'Seguir o seu Spotify (/vincular)',
         value:
-          'Não. O bot lê o que o próprio Discord já publica no seu status. ' +
-          'Nenhuma senha, nenhum token, nenhuma autorização. Ele também não controla ' +
-          'o seu Spotify — só observa e reproduz o mesmo na call.',
+          COMO_LIGAR +
+          '\nNão precisa de login nem senha: o bot só lê o que o Discord já publica no ' +
+          'seu status, e não controla o seu Spotify.',
+      },
+      {
+        name: 'Tocar na sua fila do Spotify (/spotify)',
+        value:
+          'Em vez de tocar na call, o bot põe os pedidos na fila do **seu** Spotify ' +
+          '(precisa de Premium). Aí sim há um login, uma vez: `/conectar-spotify`.',
       },
     );
 }
