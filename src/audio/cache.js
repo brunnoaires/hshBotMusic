@@ -68,6 +68,16 @@ export class JsonCache {
     this.#scheduleFlush();
   }
 
+  /** [chave, valor] de tudo que nao expirou, sem mexer no LRU. */
+  entries() {
+    const agora = Date.now();
+    const out = [];
+    for (const [key, entry] of this.#entries) {
+      if (!entry.exp || agora <= entry.exp) out.push([key, entry.v]);
+    }
+    return out;
+  }
+
   delete(key) {
     if (this.#entries.delete(key)) this.#scheduleFlush();
   }

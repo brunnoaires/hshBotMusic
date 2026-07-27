@@ -258,11 +258,17 @@ Setup (uma vez):
 
 Aí cada streamer faz, no Discord:
 
-1. `/conectar-spotify` → o bot manda um link
+1. `/conectar-spotify email:<e-mail do Spotify dela>` → o bot manda um link e
+   **guarda o e-mail** para o dono liberar
 2. Abre o link, autoriza, copia o código que a página mostra
 3. `/conectar-spotify codigo:<o código>` → conectado
 4. `/spotify` → os pedidos vão para o Spotify **dele** (precisa de Premium + Spotify
    aberto e tocando). `/desconectar-spotify` remove.
+
+O dono vê quem conectou e o e-mail de cada um com **`/spotify-contas`**, e copia os
+e-mails para o *User Management* no painel. Enquanto alguém não estiver liberado
+lá, o `/sr` dela avisa que falta o dono liberar — a Spotify bloqueia a API de quem
+não está na lista, mesmo com a conexão feita.
 
 > Os tokens ficam em `cache/spotify-users.json` (gitignored). São credenciais de
 > terceiros — não compartilhe esse arquivo.

@@ -10,7 +10,13 @@ import {
 } from 'discord.js';
 import { buscarPedido, candidatosPara, fixarMatch, invalidateMatch } from '../audio/resolve.js';
 import { readSpotifyActivity } from '../spotify/presence.js';
-import { apiDoUsuario, esquecerToken, salvarToken, trocarCodigo } from '../spotify/users.js';
+import {
+  apiDoUsuario,
+  esquecerToken,
+  listarUsuarios,
+  salvarUsuario,
+  trocarCodigo,
+} from '../spotify/users.js';
 import { TikTokConnector } from '../tiktok/connector.js';
 import { TikTokBridge } from '../tiktok/bridge.js';
 import { createLogger } from '../logger.js';
@@ -73,6 +79,12 @@ export const commands = [
     .setDescription('Conecta o SEU Spotify ao bot (para o modo Spotify)')
     .addStringOption((option) =>
       option
+        .setName('email')
+        .setDescription('O e-mail da sua conta Spotify (o dono precisa dele para te liberar)')
+        .setMaxLength(120),
+    )
+    .addStringOption((option) =>
+      option
         .setName('codigo')
         .setDescription('Cole aqui o código que a página mostrou (deixe vazio para pegar o link)')
         .setMaxLength(400),
@@ -80,6 +92,9 @@ export const commands = [
   new SlashCommandBuilder()
     .setName('desconectar-spotify')
     .setDescription('Remove o seu Spotify conectado ao bot'),
+  new SlashCommandBuilder()
+    .setName('spotify-contas')
+    .setDescription('(dono) Lista quem conectou o Spotify e o e-mail para liberar no painel'),
   new SlashCommandBuilder()
     .setName('sr')
     .setDescription('Pede uma música sem Spotify: busca por nome ou cola um link')
@@ -507,12 +522,23 @@ export async function handleCommand(interaction, { sessions, config, onChange, o
       }
 
       const codigo = interaction.options.getString('codigo')?.trim();
+      const email = interaction.options.getString('email')?.trim();
+
+      // Guarda/loga o e-mail assim que vier, para o dono ja ir liberando.
+      if (email) {
+        await salvarUsuario(interaction.user.id, { email, nome: interaction.user.username });
+        log.info(`liberar no Spotify: ${interaction.user.username} (${interaction.user.id}) — ${email}`);
+      }
 
       // Sem codigo: manda o link para a pessoa autorizar.
       if (!codigo) {
+        const aviso = email
+          ? `Anotei o seu e-mail (**${email}**) para o dono te liberar.\n\n`
+          : '⚠️ Você não informou o e-mail. Rode com `email:seu@email.com` para o dono conseguir te liberar.\n\n';
         await interaction.reply(
           efemero(
-            '**1.** Abra este link e autorize:\n' +
+            aviso +
+              '**1.** Abra este link e autorize:\n' +
               urlAutorizacaoSpotify(config) +
               '\n\n**2.** Copie o código que a página mostrar.\n' +
               '**3.** Rode `/conectar-spotify codigo:<o código>`.',
@@ -536,10 +562,42 @@ export async function handleCommand(interaction, { sessions, config, onChange, o
         return;
       }
 
-      await salvarToken(interaction.user.id, refreshToken);
+      await salvarUsuario(interaction.user.id, {
+        token: refreshToken,
+        ...(email ? { email, nome: interaction.user.username } : {}),
+      });
       await interaction.editReply(
-        'Spotify conectado! Agora `/spotify` manda os pedidos para a **sua** conta. ' +
-          'Precisa de Premium e do Spotify aberto e tocando.',
+        'Spotify conectado! Agora `/spotify` manda os pedidos para a **sua** conta.\n' +
+          '⚠️ O dono ainda precisa **liberar** o seu e-mail no painel do Spotify — ' +
+          (email ? `já mandei o seu (**${email}**) para ele.` : 'rode de novo com `email:` para ele te liberar.') +
+          ' Precisa de Premium e do Spotify aberto e tocando.',
+      );
+      return;
+    }
+
+    case 'spotify-contas': {
+      if (interaction.user.id !== config.discord.ownerId) {
+        await interaction.reply(efemero('Só o dono do bot pode ver isso.'));
+        return;
+      }
+
+      const contas = await listarUsuarios();
+      if (!contas.length) {
+        await interaction.reply(efemero('Ninguém conectou o Spotify ainda.'));
+        return;
+      }
+
+      const linhas = contas.map((c) => {
+        const quem = c.nome ? `**${c.nome}**` : `<@${c.id}>`;
+        const status = c.temToken ? '' : ' _(ainda não autorizou)_';
+        return `- ${quem} — \`${c.email ?? 'sem e-mail'}\`${status}`;
+      });
+      await interaction.reply(
+        efemero(
+          'Adicione cada e-mail em **User Management** no painel do Spotify:\n' +
+            linhas.join('\n') +
+            '\n\n[Abrir painel](https://developer.spotify.com/dashboard)',
+        ),
       );
       return;
     }

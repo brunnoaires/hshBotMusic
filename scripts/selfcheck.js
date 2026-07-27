@@ -64,7 +64,7 @@ check('commands.js constroi os slash commands', async () => {
   const esperados = [
     'vincular', 'desvincular', 'modo', 'agora', 'pular', 'pausar', 'retomar',
     'fila', 'limpar', 'rematch', 'sr', 'entrar', 'spotify', 'conectar-spotify',
-    'desconectar-spotify', 'tiktok', 'ajuda',
+    'desconectar-spotify', 'spotify-contas', 'tiktok', 'ajuda',
   ];
   for (const n of esperados) {
     if (!names.includes(n)) throw new Error(`faltou /${n}`);
@@ -512,8 +512,8 @@ check('jukebox: primeiro pedido toca, os seguintes enfileiram', async () => {
   return 'toca a primeira, enfileira b e c, sem duplicar';
 });
 
-check('spotify por usuario: guarda, le e esquece o token', async () => {
-  const { salvarToken, temToken, apiDoUsuario, esquecerToken } = await import(
+check('spotify por usuario: token, e-mail e listagem', async () => {
+  const { salvarUsuario, temToken, apiDoUsuario, listarUsuarios, esquecerToken } = await import(
     '../src/spotify/users.js'
   );
 
@@ -522,8 +522,16 @@ check('spotify por usuario: guarda, le e esquece o token', async () => {
   try {
     if (await temToken(id)) throw new Error('id de teste ja existia (limpe o cache)');
 
-    await salvarToken(id, 'refresh-fake-123');
+    // E-mail chega antes do token; depois o token chega e nao apaga o e-mail.
+    await salvarUsuario(id, { email: 'teste@exemplo.com', nome: 'Teste' });
+    if (await temToken(id)) throw new Error('so e-mail nao deveria contar como conectado');
+
+    await salvarUsuario(id, { token: 'refresh-fake-123' });
     if (!(await temToken(id))) throw new Error('token nao persistiu');
+
+    const eu = (await listarUsuarios()).find((u) => u.id === id);
+    if (eu?.email !== 'teste@exemplo.com') throw new Error('token novo apagou o e-mail (merge falhou)');
+    if (!eu.temToken) throw new Error('listagem deveria marcar temToken');
 
     const api = await apiDoUsuario({ clientId: 'a', clientSecret: 'b' }, id);
     if (!api || typeof api.queueTrack !== 'function') throw new Error('nao virou uma SpotifyApi');
@@ -535,7 +543,7 @@ check('spotify por usuario: guarda, le e esquece o token', async () => {
   }
 
   if (await temToken(id)) throw new Error('esquecerToken nao removeu');
-  return 'salva, le, cria SpotifyApi e esquece';
+  return 'e-mail e token mesclam, listagem e esquecimento ok';
 });
 
 check('modo spotify: enfileira na conta e nao entra em voz', async () => {

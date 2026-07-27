@@ -40,11 +40,29 @@ export async function trocarCodigo({ clientId, clientSecret, redirectUri, code }
   return (await res.json()).refresh_token ?? null;
 }
 
-/** Guarda o refresh token de um streamer. */
-export async function salvarToken(discordUserId, refreshToken) {
+/**
+ * Normaliza o valor guardado. Versoes antigas gravavam so o refresh token como
+ * string; agora e um objeto { token, email, nome }. Le os dois formatos.
+ */
+function entradaDe(valor) {
+  if (!valor) return null;
+  return typeof valor === 'string' ? { token: valor } : valor;
+}
+
+/**
+ * Grava/atualiza os dados de um streamer, mesclando com o que ja existe (para o
+ * e-mail e o token poderem chegar em momentos diferentes).
+ */
+export async function salvarUsuario(discordUserId, dados) {
   await store.ready();
-  store.set(discordUserId, refreshToken);
+  const atual = entradaDe(store.get(discordUserId)) ?? {};
+  store.set(discordUserId, { ...atual, ...dados });
   await store.flush();
+}
+
+/** Compat: grava so o token (usado pelo /conectar-spotify). */
+export function salvarToken(discordUserId, token) {
+  return salvarUsuario(discordUserId, { token });
 }
 
 /** Esquece o Spotify de um streamer. */
@@ -54,10 +72,19 @@ export async function esquecerToken(discordUserId) {
   await store.flush();
 }
 
-/** Esse streamer conectou o Spotify? */
+/** Esse streamer ja tem token (conexao completa)? */
 export async function temToken(discordUserId) {
   await store.ready();
-  return Boolean(store.get(discordUserId));
+  return Boolean(entradaDe(store.get(discordUserId))?.token);
+}
+
+/** Lista os streamers conectados, para o dono liberar no painel do Spotify. */
+export async function listarUsuarios() {
+  await store.ready();
+  return store.entries().map(([id, valor]) => {
+    const e = entradaDe(valor) ?? {};
+    return { id, email: e.email ?? null, nome: e.nome ?? null, temToken: Boolean(e.token) };
+  });
 }
 
 /**
@@ -66,7 +93,7 @@ export async function temToken(discordUserId) {
  */
 export async function apiDoUsuario({ clientId, clientSecret }, discordUserId) {
   await store.ready();
-  const refreshToken = store.get(discordUserId);
+  const refreshToken = entradaDe(store.get(discordUserId))?.token;
   if (!refreshToken) return null;
 
   return new SpotifyApi({ clientId, clientSecret, refreshToken });
