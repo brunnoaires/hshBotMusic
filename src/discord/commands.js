@@ -215,9 +215,12 @@ function explicarSpotify(resultado, rotulo) {
     case 'sem-conta':
       return 'Nenhum Spotify conectado nesta sessão. Rode `/conectar-spotify`.';
     case 'sem-device':
-      return 'Nenhum Spotify ativo. Abra o Spotify e comece a tocar algo, aí tente de novo.';
-    case 'sem-premium-ou-escopo':
-      return 'Falhou: precisa de Spotify **Premium** e do login refeito com `npm run login:spotify`.';
+      return (
+        'O Spotify não está tocando em nenhum aparelho. Abra o Spotify e **dê play em ' +
+        'qualquer música** (uma vez), aí o `/sr` passa a adicionar na fila. Precisa ficar tocando.'
+      );
+    case 'sem-premium':
+      return 'Essa conta do Spotify **não é Premium** — a fila pela API só funciona com Premium.';
     default:
       return `Não consegui adicionar à fila do Spotify (${resultado?.erro ?? 'erro'}).`;
   }

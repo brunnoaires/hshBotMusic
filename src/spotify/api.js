@@ -188,9 +188,19 @@ export class SpotifyApi {
       });
       if (res.status === 204 || res.ok) return { ok: true };
 
-      // 404 = nenhum device ativo; 403 = sem Premium ou escopo faltando.
-      if (res.status === 404) return { ok: false, erro: 'sem-device' };
-      if (res.status === 403) return { ok: false, erro: 'sem-premium-ou-escopo' };
+      // O motivo exato vem no corpo (reason), muito mais util que o codigo: um
+      // 403 tanto pode ser "sem Premium" quanto "device inativo".
+      let reason = '';
+      try {
+        reason = (await res.json())?.error?.reason ?? '';
+      } catch {
+        // corpo nao-JSON; segue so pelo status
+      }
+
+      if (res.status === 404 || reason === 'NO_ACTIVE_DEVICE') return { ok: false, erro: 'sem-device' };
+      if (reason === 'PREMIUM_REQUIRED') return { ok: false, erro: 'sem-premium' };
+      // 403 sem reason claro quase sempre e device inativo/restrito.
+      if (res.status === 403) return { ok: false, erro: 'sem-device' };
       return { ok: false, erro: `http-${res.status}` };
     } catch (err) {
       log.debug(`queueTrack falhou: ${err.message}`);
