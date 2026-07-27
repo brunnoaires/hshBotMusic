@@ -34,6 +34,9 @@ export class TikTokBridge {
   /** Creditos de prioridade concedidos por presente, por usuario -> expira em. */
   #prioridades = new Map();
 
+  /** Ultimo pedido aceito de cada usuario, para o cooldown. */
+  #ultimoPedido = new Map();
+
   constructor({ connector, session, config, resolver = buscarPedido }) {
     this.#connector = connector;
     this.#session = session;
@@ -61,8 +64,20 @@ export class TikTokBridge {
     const query = extrairPedido(comment, this.#config.prefixo);
     if (!query) return;
 
-    // Limite por pessoa: sem isso, um espectador soltando "!sr" em sequencia
-    // domina a fila inteira.
+    // Cooldown por pessoa: espaca os pedidos, contendo a enxurrada de "!sr" que
+    // uma pessoa solta em sequencia. E a barreira principal contra spam.
+    const agora = Date.now();
+    const desde = agora - (this.#ultimoPedido.get(userId) ?? 0);
+    if (desde < this.#config.cooldownMs) {
+      log.debug(`${label} em cooldown (faltam ${Math.ceil((this.#config.cooldownMs - desde) / 1000)}s)`);
+      return;
+    }
+    // Consome o cooldown ja aqui: mesmo "!sr" que nao ache musica conta, senao
+    // daria para furar o cooldown mandando pedidos invalidos.
+    this.#ultimoPedido.set(userId, agora);
+
+    // Limite de fila por pessoa: segunda barreira, para uma pessoa nao acumular
+    // muitos pedidos ao longo do tempo mesmo respeitando o cooldown.
     if (this.#session.pedidosDe(userId) >= this.#config.maxPorUsuario) {
       log.debug(`${label} atingiu o limite de ${this.#config.maxPorUsuario} pedidos`);
       return;

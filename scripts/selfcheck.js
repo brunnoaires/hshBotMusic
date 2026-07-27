@@ -755,6 +755,53 @@ check('tiktok bridge: limite por pessoa e prioridade por presente', async () => 
   return 'limite, prioridade nova e prioridade de pedido existente ok';
 });
 
+check('tiktok bridge: cooldown por pessoa espaça os pedidos', async () => {
+  const { TikTokBridge } = await import('../src/tiktok/bridge.js');
+  const { EventEmitter } = await import('node:events');
+
+  const aceitos = [];
+  const session = {
+    player: { queue: [], current: null, carregando: false },
+    pedidosDe: () => 0, // limite de fila fora do caminho; testando so o cooldown
+    priorizarPedidoDe: () => false,
+    pedir: async (t) => {
+      aceitos.push(t.title);
+      return { posicao: aceitos.length, tocandoAgora: false };
+    },
+  };
+
+  const connector = new EventEmitter();
+  const resolver = async (q) => ({ youtubeId: q, title: q, artists: 'yt', url: 'u' });
+  // Cooldown curto para o teste; maxPorUsuario alto para nao interferir.
+  const config = { prefixo: '!sr', maxPorUsuario: 99, cooldownMs: 60, janelaPrioridadeMs: 0 };
+
+  const bridge = new TikTokBridge({ connector, session, config, resolver });
+  bridge.attach();
+
+  const chat = (comment) => connector.emit('chat', { userId: 'ana', label: '@ana', comment });
+  const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // Dois pedidos em rajada: o segundo cai no cooldown.
+  chat('!sr um');
+  chat('!sr dois');
+  await esperar(20);
+  if (aceitos.join() !== 'um') throw new Error(`esperava so "um", veio "${aceitos.join()}"`);
+
+  // Passado o cooldown, o proximo entra.
+  await esperar(70);
+  chat('!sr tres');
+  await esperar(20);
+  if (aceitos.join() !== 'um,tres') throw new Error(`depois do cooldown esperava "um,tres", veio "${aceitos.join()}"`);
+
+  // Pessoa diferente nao compartilha o cooldown.
+  connector.emit('chat', { userId: 'bruno', label: '@bruno', comment: '!sr quatro' });
+  await esperar(20);
+  if (!aceitos.includes('quatro')) throw new Error('outra pessoa nao deveria pegar o cooldown de ana');
+
+  bridge.detach();
+  return 'rajada bloqueada, retoma apos o cooldown, por pessoa';
+});
+
 check('sessoes isolam servidores e roteiam por driver', async () => {
   const { SessionManager } = await import('../src/session.js');
 

@@ -285,7 +285,8 @@ live cai ou o canal de voz esvazia.
 | `.env` | Padrão | O quê |
 | --- | --- | --- |
 | `TIKTOK_PREFIX` | `!sr` | O que marca um pedido no chat |
-| `TIKTOK_MAX_PER_USER` | `2` | Pedidos simultâneos por espectador, contra spam |
+| `TIKTOK_COOLDOWN_S` | `10` | Intervalo mínimo entre pedidos da mesma pessoa |
+| `TIKTOK_MAX_PER_USER` | `2` | Pedidos simultâneos por espectador (2ª barreira) |
 | `TIKTOK_PRIORITY_WINDOW_S` | `120` | Janela em que o presente prioriza o próximo pedido |
 | `TIKTOK_SIGN_API_KEY` | — | Só se o sign server gratuito começar a limitar |
 
