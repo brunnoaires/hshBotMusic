@@ -1,6 +1,28 @@
 import 'dotenv/config';
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
+
+/**
+ * Grava (ou substitui) SPOTIFY_REFRESH_TOKEN no .env, para o usuario nao ter que
+ * copiar e colar. So mexe nessa linha; o resto do arquivo fica intacto.
+ */
+function gravarNoEnv(refreshToken) {
+  const caminho = new URL('../.env', import.meta.url);
+  let texto = '';
+  try {
+    texto = readFileSync(caminho, 'utf8');
+  } catch {
+    // Sem .env ainda: cria com so essa linha.
+  }
+
+  const linha = `SPOTIFY_REFRESH_TOKEN=${refreshToken}`;
+  texto = /^SPOTIFY_REFRESH_TOKEN=.*$/m.test(texto)
+    ? texto.replace(/^SPOTIFY_REFRESH_TOKEN=.*$/m, linha)
+    : `${texto.replace(/\s*$/, '')}\n${linha}\n`;
+
+  writeFileSync(caminho, texto);
+}
 
 // Le o .env direto em vez de src/config.js: da para pegar o refresh token do
 // Spotify antes mesmo de ter criado o bot no Discord.
@@ -71,8 +93,8 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     res.end(page('Pronto!', 'Pode fechar esta aba e voltar para o terminal.'));
 
-    console.log('\n  Cole esta linha no seu .env:\n');
-    console.log(`SPOTIFY_REFRESH_TOKEN=${tokens.refresh_token}\n`);
+    gravarNoEnv(tokens.refresh_token);
+    console.log('\n  Token salvo direto no .env. Reinicie o bot para valer.\n');
   } catch (err) {
     res.writeHead(500, { 'content-type': 'text/html; charset=utf-8' });
     res.end(page('Falhou', String(err.message)));
