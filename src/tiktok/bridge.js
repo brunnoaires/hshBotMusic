@@ -76,9 +76,10 @@ export class TikTokBridge {
     // daria para furar o cooldown mandando pedidos invalidos.
     this.#ultimoPedido.set(userId, agora);
 
-    // Limite de fila por pessoa: segunda barreira, para uma pessoa nao acumular
-    // muitos pedidos ao longo do tempo mesmo respeitando o cooldown.
-    if (this.#session.pedidosDe(userId) >= this.#config.maxPorUsuario) {
+    // Limite de fila por pessoa, se configurado (0 = sem limite). Segunda
+    // barreira: mesmo respeitando o cooldown, alguem poderia acumular muitos
+    // pedidos ao longo do tempo. Por padrao fica desligado, so o cooldown vale.
+    if (this.#config.maxPorUsuario > 0 && this.#session.pedidosDe(userId) >= this.#config.maxPorUsuario) {
       log.debug(`${label} atingiu o limite de ${this.#config.maxPorUsuario} pedidos`);
       return;
     }

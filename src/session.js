@@ -123,7 +123,10 @@ class GuildSession {
     if (!r.ok) return { erro: r.erro };
 
     if (track.requestedById) {
-      const lista = this.pedidosSpotify.get(track.requestedById) ?? [];
+      // Poda na hora de gravar: se o limite estiver desligado, pedidosDe nunca e
+      // chamado e este mapa cresceria sem parar numa live longa.
+      const corte = Date.now() - 10 * 60_000;
+      const lista = (this.pedidosSpotify.get(track.requestedById) ?? []).filter((t) => t > corte);
       lista.push(Date.now());
       this.pedidosSpotify.set(track.requestedById, lista);
     }

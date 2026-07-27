@@ -286,7 +286,7 @@ live cai ou o canal de voz esvazia.
 | --- | --- | --- |
 | `TIKTOK_PREFIX` | `!sr` | O que marca um pedido no chat |
 | `TIKTOK_COOLDOWN_S` | `10` | Intervalo mínimo entre pedidos da mesma pessoa |
-| `TIKTOK_MAX_PER_USER` | `2` | Pedidos simultâneos por espectador (2ª barreira) |
+| `TIKTOK_MAX_PER_USER` | `0` | Teto de fila por pessoa (0 = sem limite, só o cooldown) |
 | `TIKTOK_PRIORITY_WINDOW_S` | `120` | Janela em que o presente prioriza o próximo pedido |
 | `TIKTOK_SIGN_API_KEY` | — | Só se o sign server gratuito começar a limitar |
 
@@ -875,7 +875,7 @@ inicialização.
 | `YTDLP_COOKIES` | Caminho de um cookies.txt do YouTube, para IP de datacenter. |
 | `TIKTOK_PREFIX` | Prefixo de pedido no chat da TikTok. Padrão `!sr`. |
 | `TIKTOK_COOLDOWN_S` | Intervalo mínimo entre pedidos da mesma pessoa. Padrão `10`. |
-| `TIKTOK_MAX_PER_USER` | Pedidos por espectador na fila. Padrão `2`. |
+| `TIKTOK_MAX_PER_USER` | Teto de fila por pessoa. Padrão `0` (sem limite). |
 | `TIKTOK_PRIORITY_WINDOW_S` | Janela de prioridade após presente, em s. Padrão `120`. |
 | `TIKTOK_SIGN_API_KEY` | Chave da EulerStream, se o sign server limitar. |
 | `LOG_LEVEL` | `debug`, `info`, `warn` ou `error`. Padrão `info`. |

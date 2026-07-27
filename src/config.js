@@ -45,7 +45,9 @@ export const config = {
   tiktok: {
     signApiKey: optional('TIKTOK_SIGN_API_KEY'),
     prefixo: optional('TIKTOK_PREFIX', '!sr'),
-    maxPorUsuario: Math.max(1, Number(optional('TIKTOK_MAX_PER_USER', '2'))),
+    // Pedidos simultaneos por pessoa. 0 = sem limite (o cooldown ja segura o
+    // ritmo); um numero > 0 vira teto de fila por pessoa.
+    maxPorUsuario: Math.max(0, Number(optional('TIKTOK_MAX_PER_USER', '0'))),
     // Intervalo minimo entre pedidos de uma mesma pessoa, contra enxurrada.
     cooldownMs: Math.max(0, Number(optional('TIKTOK_COOLDOWN_S', '10'))) * 1000,
     janelaPrioridadeMs: Math.max(0, Number(optional('TIKTOK_PRIORITY_WINDOW_S', '120'))) * 1000,
