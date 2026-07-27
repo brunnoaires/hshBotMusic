@@ -246,9 +246,11 @@ Isso tem **limites da Spotify**, não do bot:
 
 Setup (uma vez):
 
-1. **Hospede a página.** O jeito mais simples: ative **GitHub Pages** no seu repo
-   (Settings → Pages → branch `main`, pasta `/`). A URL vira algo como
-   `https://SEU_USUARIO.github.io/hshBotMusic/web/spotify-callback.html`.
+1. **A página já fica pública** pelo `raw.githack.com`, que serve arquivos do repo
+   direto — **não precisa de GitHub Pages**. A URL é
+   `https://raw.githack.com/SEU_USUARIO/hshBotMusic/main/web/spotify-callback.html`.
+   (Se preferir algo mais "oficial", GitHub Pages também serve: Settings → Pages →
+   branch `main`, pasta `/`.)
 2. **Cadastre essa URL** como Redirect URI no app do Spotify (além da de loopback
    que já existe — o app aceita várias).
 3. No `.env`: `SPOTIFY_USER_REDIRECT_URI=` com essa mesma URL. Reinicie.
